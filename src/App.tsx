@@ -9,6 +9,8 @@ import DoctorsPage from "./pages/DoctorsPage";
 import BookAppointmentPage from "./pages/BookAppointmentPage";
 import LabTestsPage from "./pages/LabTestsPage";
 import PrescriptionPage from "./pages/PrescriptionPage";
+import HospitalDashboard from "./pages/admin/HospitalDashboard";
+import PharmacyDashboard from "./pages/admin/PharmacyDashboard";
 
 const queryClient = new QueryClient();
 
@@ -24,6 +26,8 @@ const App = () => (
           <Route path="/book-appointment/:doctorId" element={<BookAppointmentPage />} />
           <Route path="/lab-tests" element={<LabTestsPage />} />
           <Route path="/prescription" element={<PrescriptionPage />} />
+          <Route path="/admin/hospital" element={<HospitalDashboard />} />
+          <Route path="/admin/pharmacy" element={<PharmacyDashboard />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
