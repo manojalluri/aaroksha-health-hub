@@ -11,6 +11,7 @@ import LabTestsPage from "./pages/LabTestsPage";
 import PrescriptionPage from "./pages/PrescriptionPage";
 import HospitalDashboard from "./pages/admin/HospitalDashboard";
 import PharmacyDashboard from "./pages/admin/PharmacyDashboard";
+import LabDashboard from "./pages/admin/LabDashboard";
 
 const queryClient = new QueryClient();
 
