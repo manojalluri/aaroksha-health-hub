@@ -75,7 +75,7 @@ interface LabTechnician {
 const MOCK_BOOKINGS = [
   {
     id: "lb001", patient_name: "Rahul Verma", patient_phone: "9876543210",
-    patient_address: "12, MG Road, Hyderabad", age: 32, gender: "Male",
+    patient_address: "12, MG Road, Bhimavaram", age: 32, gender: "Male",
     collection_date: "2026-03-29", collection_time: "09:00 AM",
     technician: null, total_amount: 1000, status: "pending",
     tests: [
@@ -85,14 +85,14 @@ const MOCK_BOOKINGS = [
   },
   {
     id: "lb002", patient_name: "Sneha Patil", patient_phone: "9123456780",
-    patient_address: "45, Jubilee Hills, Hyderabad", age: 28, gender: "Female",
+    patient_address: "45, Jubilee Hills, Bhimavaram", age: 28, gender: "Female",
     collection_date: "2026-03-29", collection_time: "08:00 AM",
     technician: "Technician Ravi", total_amount: 2500, status: "confirmed",
     tests: [{ name: "Comprehensive Metabolic Panel", price: 2500 }]
   },
   {
     id: "lb003", patient_name: "Amit Sharma", patient_phone: "9988776655",
-    patient_address: "8, Banjara Hills, Hyderabad", age: 45, gender: "Male",
+    patient_address: "8, Banjara Hills, Bhimavaram", age: 45, gender: "Male",
     collection_date: "2026-03-28", collection_time: "07:00 AM",
     technician: "Technician Priya", total_amount: 1100, status: "collected",
     tests: [
@@ -103,21 +103,21 @@ const MOCK_BOOKINGS = [
   },
   {
     id: "lb004", patient_name: "Priya Reddy", patient_phone: "9876001234",
-    patient_address: "23, Madhapur, Hyderabad", age: 35, gender: "Female",
+    patient_address: "23, Madhapur, Bhimavaram", age: 35, gender: "Female",
     collection_date: "2026-03-28", collection_time: "10:00 AM",
     technician: "Technician Ravi", total_amount: 800, status: "processing",
     tests: [{ name: "Vitamin D Test", price: 800 }]
   },
   {
     id: "lb005", patient_name: "Kiran Kumar", patient_phone: "9000112233",
-    patient_address: "56, Gachibowli, Hyderabad", age: 52, gender: "Male",
+    patient_address: "56, Gachibowli, Bhimavaram", age: 52, gender: "Male",
     collection_date: "2026-03-27", collection_time: "06:30 AM",
     technician: "Technician Anil", total_amount: 450, status: "cancelled",
     tests: [{ name: "Urine Routine", price: 150 }, { name: "Kidney Function Test", price: 300 }]
   },
   {
     id: "lb006", patient_name: "Deepa Nair", patient_phone: "9870001122",
-    patient_address: "11, Kondapur, Hyderabad", age: 38, gender: "Female",
+    patient_address: "11, Kondapur, Bhimavaram", age: 38, gender: "Female",
     collection_date: "2026-03-27", collection_time: "08:30 AM",
     technician: "Technician Priya", total_amount: 600, status: "completed",
     tests: [{ name: "Urine Routine", price: 150 }, { name: "Blood Sugar PP", price: 450 }]

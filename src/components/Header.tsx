@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Heart, MapPin, Menu, X } from "lucide-react";
+import { MapPin, Menu, X } from "lucide-react";
 import { useState } from "react";
 
 const Header = () => {
@@ -17,7 +17,6 @@ const Header = () => {
     <header className="sticky top-0 z-50 glass-card border-b border-border/40">
       <div className="container mx-auto flex items-center justify-between py-3 px-4">
         <Link to="/" className="flex items-center gap-2">
-          <img src="/logo.png" alt="Aaroksha Logo" className="h-9 w-9 object-contain" />
           <span className="text-xl font-bold tracking-tight text-foreground">
             AAROKSHA
           </span>
@@ -42,7 +41,7 @@ const Header = () => {
         <div className="hidden md:flex items-center gap-3">
           <div className="flex items-center gap-1 rounded-full bg-secondary px-3 py-1.5 text-sm text-secondary-foreground">
             <MapPin className="h-3.5 w-3.5" />
-            Hyderabad
+            Bhimavaram
           </div>
           <Link
             to="/doctors"

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
-import { Star, Search, Loader2, Clock, ChevronLeft, Home, Calendar, FlaskConical, Pill, User, Heart, Languages, Building2 } from "lucide-react";
+import { Star, Search, Loader2, Clock, ChevronLeft, Home, Calendar, FlaskConical, Pill, User, Languages, Building2 } from "lucide-react";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
@@ -111,9 +111,6 @@ const DoctorsPage = () => {
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Find a Specialist</p>
             <h1 className="text-lg font-black text-slate-800 leading-tight">OP Booking</h1>
           </div>
-          <div className="h-10 w-10 flex items-center justify-center shrink-0">
-            <img src="/logo.png" alt="Aaroksha Logo" className="h-full w-full object-contain" />
-          </div>
         </div>
 
         {/* Search */}
@@ -168,7 +165,7 @@ const DoctorsPage = () => {
                 className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm active:scale-[0.99] transition-all"
               >
                 <div className="flex gap-4">
-                  <div className="h-16 w-16 rounded-full overflow-hidden shrink-0 shadow-lg">
+                  <div className="h-16 w-16 rounded-2xl overflow-hidden shrink-0 shadow-lg">
                     {doctor.image_url ? (
                       <img src={doctor.image_url} alt={doctor.name} className="h-full w-full object-cover" />
                     ) : (

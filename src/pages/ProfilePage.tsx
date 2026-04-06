@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   User, Phone, MapPin, Edit3, X, Home, Calendar,
   FlaskConical, Pill, Clock, CheckCircle, AlertCircle,
-  ChevronRight, Package, Stethoscope, TestTube, Heart,
+  ChevronRight, Package, Stethoscope, TestTube,
   RotateCcw, LogOut, CreditCard, ShieldCheck, Truck,
   IndianRupee, KeyRound, Copy, Check,
 } from "lucide-react";
@@ -241,9 +241,7 @@ const ProfilePage = () => {
       {/* ── Header ── */}
       <header className="bg-white border-b border-slate-100 sticky top-0 z-40">
         <div className="flex items-center gap-3 px-4 pt-10 pb-4">
-          <div className="h-10 w-10 flex items-center justify-center shrink-0">
-            <img src="/logo.png" alt="Aaroksha Logo" className="h-full w-full object-contain" />
-          </div>
+          {/* Icon removed */}
           <div className="flex-1">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Aaroksha Health Hub</p>
             <h1 className="text-lg font-black text-slate-800 leading-tight">My Profile</h1>

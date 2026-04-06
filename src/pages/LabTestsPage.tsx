@@ -3,7 +3,7 @@ import { useNavigate, useLocation, Link } from "react-router-dom";
 import {
   ShoppingCart, Trash2, Search, CheckCircle, MapPin, Clock,
   Loader2, TestTube, Calendar, ChevronLeft, Home, FlaskConical,
-  Pill, User, Heart, ChevronRight,
+  Pill, User, ChevronRight,
 } from "lucide-react";
 import { type CartItem, type PatientDetails } from "@/data/mockData";
 import { toast } from "sonner";

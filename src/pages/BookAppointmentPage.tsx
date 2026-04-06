@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Calendar, Clock, Star, CheckCircle, Loader2,
-  ChevronLeft, Building2, Languages, Heart, Zap,
+  ChevronLeft, Building2, Languages, Zap,
 } from "lucide-react";
 import { timeSlots, type PatientDetails } from "@/data/mockData";
 import { toast } from "sonner";
@@ -19,6 +19,7 @@ interface Doctor {
   rating: number;
   experience: number;
   fee: number;
+  image_url?: string;
   consultationFee?: number;
   hospital_name?: string;
   hospital_id?: string;
@@ -221,10 +222,14 @@ const BookAppointmentPage = () => {
       {step !== "confirmed" && (
         <div className="bg-white mx-4 mt-4 rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-3">
           <div
-            className="h-14 w-14 rounded-2xl flex items-center justify-center text-white font-black text-xl shrink-0 shadow-md"
+            className="h-14 w-14 rounded-2xl flex items-center justify-center text-white font-black text-xl shrink-0 shadow-md overflow-hidden"
             style={{ backgroundColor: accentColor, boxShadow: `0 4px 12px ${accentColor}40` }}
           >
-            {initial}
+            {doctor.image_url ? (
+              <img src={doctor.image_url} alt={doctor.name} className="h-full w-full object-cover" />
+            ) : (
+              initial
+            )}
           </div>
           <div className="flex-1 min-w-0">
             <h2 className="font-black text-slate-800 text-sm truncate">{doctor.name}</h2>

@@ -141,10 +141,10 @@ const getMeta = (type: string) => TYPE_META[type as keyof typeof TYPE_META] || T
 
 // ─── Seed Partners (local state until DB partners table ready) ─────────────────
 const SEED_PARTNERS: Partner[] = [
-  { id: "c1", name: "Apollo Hospital", type: "hospital", email: "hospital@aaroksha.com", password: "Hosp@2026", phone: "+91 98765 43210", address: "Hyderabad, TS", commission_type: "percentage", commission_rate: 10, partner_id: "HOSPITAL_SEED1", status: "active" },
-  { id: "c2", name: "Aaroksha Diagnostics", type: "lab", email: "lab@aaroksha.com", password: "Lab@2026", phone: "+91 87654 32109", address: "Hyderabad, TS", commission_type: "percentage", commission_rate: 18, partner_id: "LAB_SEED1", status: "active" },
-  { id: "c3", name: "MedPlus Pharmacy", type: "pharmacy", email: "pharmacy@aaroksha.com", password: "Pharm@2026", phone: "+91 76543 21098", address: "Hyderabad, TS", commission_type: "percentage", commission_rate: 15, partner_id: "PHARMACY_SEED1", status: "active" },
-  { id: "c4", name: "FastTrack Logistics", type: "logistics", email: "logistics@aaroksha.com", password: "Logi@2026", phone: "+91 65432 10987", address: "Hyderabad, TS", commission_type: "fixed", commission_rate: 30, partner_id: "LOGISTICS_SEED1", status: "active" },
+  { id: "c1", name: "Apollo Hospital", type: "hospital", email: "hospital@aaroksha.com", password: "Hosp@2026", phone: "+91 98765 43210", address: "Bhimavaram, AP", commission_type: "percentage", commission_rate: 10, partner_id: "HOSPITAL_SEED1", status: "active" },
+  { id: "c2", name: "Aaroksha Diagnostics", type: "lab", email: "lab@aaroksha.com", password: "Lab@2026", phone: "+91 87654 32109", address: "Bhimavaram, AP", commission_type: "percentage", commission_rate: 18, partner_id: "LAB_SEED1", status: "active" },
+  { id: "c3", name: "MedPlus Pharmacy", type: "pharmacy", email: "pharmacy@aaroksha.com", password: "Pharm@2026", phone: "+91 76543 21098", address: "Bhimavaram, AP", commission_type: "percentage", commission_rate: 15, partner_id: "PHARMACY_SEED1", status: "active" },
+  { id: "c4", name: "FastTrack Logistics", type: "logistics", email: "logistics@aaroksha.com", password: "Logi@2026", phone: "+91 65432 10987", address: "Bhimavaram, AP", commission_type: "fixed", commission_rate: 30, partner_id: "LOGISTICS_SEED1", status: "active" },
 ];
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────

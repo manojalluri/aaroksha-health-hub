@@ -1,4 +1,4 @@
-import { Heart, Mail, Phone } from "lucide-react";
+import { Mail, Phone } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const Footer = () => {
@@ -42,7 +42,7 @@ const Footer = () => {
         </div>
         <div className="border-t border-border pt-6 text-center">
           <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Heart className="h-4 w-4 text-primary" fill="currentColor" />
+            {/* Heart icon removed */}
             © 2024 Aaroksha. All rights reserved.
           </div>
         </div>

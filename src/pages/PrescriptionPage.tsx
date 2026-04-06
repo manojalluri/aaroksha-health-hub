@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import {
   Upload, Camera, CheckCircle, Clock, Package, Loader2,
-  ShieldCheck, MapPin, Phone, User, ChevronLeft, Heart,
+  ShieldCheck, MapPin, Phone, User, ChevronLeft,
   Home, Calendar, FlaskConical, Pill, Plus, Minus, Trash2,
   ChevronRight, Search, ShoppingCart, KeyRound, Copy, Check,
 } from "lucide-react";
@@ -51,6 +51,7 @@ const PrescriptionPage = () => {
   const location = useLocation();
   const { user } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
 
   const [image, setImage] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -435,10 +436,7 @@ const PrescriptionPage = () => {
       {mainTab === "upload_flow" && step === "upload" && (
         <main className="flex-1 px-4 pt-5 pb-28 space-y-6">
           {/* Upload Card */}
-          <div
-            onClick={() => fileRef.current?.click()}
-            className="bg-white rounded-3xl border-2 border-dashed border-green-200 p-8 text-center cursor-pointer active:scale-[0.99] transition-all hover:border-green-400 hover:bg-green-50/30"
-          >
+          <div className="bg-white rounded-3xl border-2 border-dashed border-green-200 p-8 text-center transition-all hover:border-green-400 hover:bg-green-50/30">
             <div className="h-20 w-20 rounded-3xl bg-green-100 flex items-center justify-center mx-auto mb-5">
               <Upload className="h-9 w-9 text-green-600" />
             </div>
@@ -447,15 +445,22 @@ const PrescriptionPage = () => {
               Take a photo or upload your prescription. Our pharmacist will review it and send you the price.
             </p>
             <div className="flex gap-3 justify-center">
-              <span className="flex items-center gap-2 rounded-2xl bg-green-600 px-5 py-3 text-xs font-black text-white shadow-lg shadow-green-200">
+              <button
+                onClick={() => cameraRef.current?.click()}
+                className="flex items-center gap-2 rounded-2xl bg-green-600 px-5 py-3 text-xs font-black text-white shadow-lg shadow-green-200 active:scale-[0.98] transition-transform"
+              >
                 <Camera className="h-4 w-4" /> Take Photo
-              </span>
-              <span className="flex items-center gap-2 rounded-2xl bg-slate-100 px-5 py-3 text-xs font-black text-slate-600">
+              </button>
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="flex items-center gap-2 rounded-2xl bg-slate-100 px-5 py-3 text-xs font-black text-slate-600 active:scale-[0.98] transition-transform hover:bg-slate-200"
+              >
                 <Upload className="h-4 w-4" /> Browse
-              </span>
+              </button>
             </div>
           </div>
           <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+          <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileChange} />
 
           {/* How it works */}
           <div className="bg-white rounded-3xl border border-slate-100 p-5">
