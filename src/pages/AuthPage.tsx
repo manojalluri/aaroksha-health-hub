@@ -67,8 +67,8 @@ const AuthPage = () => {
     <div className="min-h-screen bg-white flex flex-col p-6 pt-20">
       {/* ── Brand ── */}
       <div className="flex flex-col items-center mb-10 text-center">
-        <div className="h-16 w-16 rounded-3xl bg-blue-600 flex items-center justify-center shadow-xl shadow-blue-200 mb-5 animate-bounce-slow">
-          <Heart className="h-8 w-8 text-white fill-white" />
+        <div className="h-24 w-24 flex items-center justify-center mb-5 animate-bounce-slow">
+          <img src="/logo.png" alt="Aaroksha Logo" className="h-full w-full object-contain drop-shadow-lg" />
         </div>
         <h1 className="text-3xl font-black text-slate-800 tracking-tight">AAROKSHA</h1>
         <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-[10px] mt-1">Health Hub · Hyderabad</p>

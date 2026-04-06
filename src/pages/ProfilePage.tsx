@@ -241,8 +241,8 @@ const ProfilePage = () => {
       {/* ── Header ── */}
       <header className="bg-white border-b border-slate-100 sticky top-0 z-40">
         <div className="flex items-center gap-3 px-4 pt-10 pb-4">
-          <div className="h-9 w-9 rounded-xl bg-slate-800 flex items-center justify-center shrink-0">
-            <Heart className="h-4 w-4 text-white" fill="white" />
+          <div className="h-10 w-10 flex items-center justify-center shrink-0">
+            <img src="/logo.png" alt="Aaroksha Logo" className="h-full w-full object-contain" />
           </div>
           <div className="flex-1">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Aaroksha Health Hub</p>

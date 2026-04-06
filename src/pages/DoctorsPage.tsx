@@ -111,8 +111,8 @@ const DoctorsPage = () => {
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Find a Specialist</p>
             <h1 className="text-lg font-black text-slate-800 leading-tight">OP Booking</h1>
           </div>
-          <div className="h-9 w-9 rounded-xl bg-blue-600 flex items-center justify-center">
-            <Heart className="h-4 w-4 text-white" fill="white" />
+          <div className="h-10 w-10 flex items-center justify-center shrink-0">
+            <img src="/logo.png" alt="Aaroksha Logo" className="h-full w-full object-contain" />
           </div>
         </div>
 
@@ -168,7 +168,7 @@ const DoctorsPage = () => {
                 className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm active:scale-[0.99] transition-all"
               >
                 <div className="flex gap-4">
-                  <div className="h-16 w-16 rounded-2xl overflow-hidden shrink-0 shadow-lg">
+                  <div className="h-16 w-16 rounded-full overflow-hidden shrink-0 shadow-lg">
                     {doctor.image_url ? (
                       <img src={doctor.image_url} alt={doctor.name} className="h-full w-full object-cover" />
                     ) : (

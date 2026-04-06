@@ -17,7 +17,7 @@ const Header = () => {
     <header className="sticky top-0 z-50 glass-card border-b border-border/40">
       <div className="container mx-auto flex items-center justify-between py-3 px-4">
         <Link to="/" className="flex items-center gap-2">
-          <Heart className="h-7 w-7 text-primary" fill="currentColor" />
+          <img src="/logo.png" alt="Aaroksha Logo" className="h-9 w-9 object-contain" />
           <span className="text-xl font-bold tracking-tight text-foreground">
             AAROKSHA
           </span>

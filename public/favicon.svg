@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <!-- Background circle -->
-  <circle cx="32" cy="32" r="32" fill="#16a34a"/>
+  <circle cx="32" cy="32" r="32" fill="#2563eb"/>
   <!-- Medical cross / heart hybrid -->
   <!-- Vertical bar -->
   <rect x="27" y="16" width="10" height="32" rx="3" fill="white"/>

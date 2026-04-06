@@ -1,7 +1,7 @@
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import {
-  FlaskConical, Calendar, Pill, Home, User, Clock,
-  ChevronRight, Heart, MapPin, Search, Bell, Star, ArrowRight,
+  FlaskConical, Calendar, Pill, Home, User,
+  ChevronRight, Heart, MapPin, Search, Bell, Star, Clock, ArrowRight,
 } from "lucide-react";
 
 import { useState, useEffect, useRef } from "react";
@@ -22,8 +22,8 @@ const Index = () => {
   const [banners, setBanners] = useState<Banner[]>(getBanners());
   const [settings, setSettings] = useState(getSettings());
 
+  // ── Data sync ──────────────────────────────────────────────────────────────
   useEffect(() => {
-    // Initial sync from database (Source of Truth)
     syncSettingsFromSupabase().then(s => setSettings(s));
     syncBannersFromSupabase().then(b => setBanners(b));
 
@@ -31,14 +31,13 @@ const Index = () => {
     const handleSettingsUpdate = () => setSettings(getSettings());
     window.addEventListener("banners_updated", handleBannersUpdate);
     window.addEventListener("settings_updated", handleSettingsUpdate);
-    
-    // Cross-tab sync for banners and settings
+
     const handleStorage = (e: StorageEvent) => {
       if (e.key === "aaroksha_banners") handleBannersUpdate();
       if (e.key === "aaroksha_settings") handleSettingsUpdate();
     };
     window.addEventListener("storage", handleStorage);
-    
+
     return () => {
       window.removeEventListener("banners_updated", handleBannersUpdate);
       window.removeEventListener("settings_updated", handleSettingsUpdate);
@@ -46,49 +45,24 @@ const Index = () => {
     };
   }, []);
 
-  const handleSearch = (e: React.FormEvent | React.KeyboardEvent) => {
-    if ('key' in e && e.key !== 'Enter') return;
-    e.preventDefault();
-    if (!search.trim()) return;
-
-    const query = search.toLowerCase();
-    if (query.includes("lab") || query.includes("test") || query.includes("blood") || query.includes("profile")) {
-      navigate(`/lab-tests?q=${encodeURIComponent(search)}`);
-    } else {
-      navigate(`/doctors?q=${encodeURIComponent(search)}`);
-    }
-  };
-
   useEffect(() => {
     const handleUpdate = () => {
       supabase.from("doctors").select("*").limit(4).then(({ data }) => {
         const local = getLocalDoctors() || [];
-        if (!data || data.length === 0) {
-          setDoctors(local.slice(0, 4));
-          return;
-        }
-        
-        // Merge offline local doctors
+        if (!data || data.length === 0) { setDoctors(local.slice(0, 4)); return; }
         const dbIds = new Set(data.map(d => d.id));
         const missingLocal = local.filter(d => !dbIds.has(d.id) && String(d.id).startsWith("local-"));
-        
         setDoctors([...data, ...missingLocal].slice(0, 4));
       }).catch(() => setDoctors(getLocalDoctors().slice(0, 4)));
     };
-    
+
     handleUpdate();
     window.addEventListener("doctors_updated", handleUpdate);
-    
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === "aaroksha_doctors") handleUpdate();
-    };
+    const handleStorage = (e: StorageEvent) => { if (e.key === "aaroksha_doctors") handleUpdate(); };
     window.addEventListener("storage", handleStorage);
 
-    // Supabase Realtime fallback
     const channel = supabase.channel("public:doctors_index")
-      .on("postgres_changes", { event: "*", schema: "public", table: "doctors" }, () => {
-        handleUpdate();
-      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "doctors" }, handleUpdate)
       .subscribe();
 
     return () => {
@@ -98,20 +72,49 @@ const Index = () => {
     };
   }, []);
 
-  // Banners are now synced from localStorage/getBanners
+  // ── Banner auto-rotate ─────────────────────────────────────────────────────
+  useEffect(() => {
+    if (banners.length <= 1) return;
+    const t = setInterval(() => setActiveBanner(p => (p + 1) % banners.length), 4000);
+    return () => clearInterval(t);
+  }, [banners.length]);
 
+  const goToBanner = (idx: number) => setActiveBanner((idx + banners.length) % banners.length);
+
+  // ── Search ─────────────────────────────────────────────────────────────────
+  const handleSearch = (e: React.FormEvent | React.KeyboardEvent) => {
+    if ('key' in e && e.key !== 'Enter') return;
+    e.preventDefault();
+    if (!search.trim()) return;
+    const q = search.toLowerCase();
+    if (q.includes("lab") || q.includes("test") || q.includes("blood") || q.includes("profile")) {
+      navigate(`/lab-tests?q=${encodeURIComponent(search)}`);
+    } else {
+      navigate(`/doctors?q=${encodeURIComponent(search)}`);
+    }
+  };
+
+  // ── Static data ────────────────────────────────────────────────────────────
   const services = [
-    { icon: Calendar, title: "OP Booking", subtitle: "Book appointments", to: "/doctors", color: "#2563eb", bg: "#dbeafe", visible: settings.opdCheck },
-    { icon: FlaskConical, title: "Lab Tests", subtitle: "At your door", to: "/lab-tests", color: "#7c3aed", bg: "#ede9fe", visible: settings.labCheck },
-    { icon: Pill, title: "Medicines", subtitle: "Delivered fast", to: "/prescription", color: "#059669", bg: "#d1fae5", visible: settings.pharmCheck },
+    {
+      icon: Calendar, title: "OP Booking",
+      subtitle: "Consult with specialised doctors instantly.",
+      to: "/doctors", color: "#2563eb", bg: "#dbeafe",
+      visible: settings.opdCheck,
+    },
+    {
+      icon: FlaskConical, title: "Lab Tests",
+      subtitle: "Home collection and rapid results.",
+      to: "/lab-tests", color: "#0d9488", bg: "#ccfbf1",
+      visible: settings.labCheck,
+    },
+    {
+      icon: Pill, title: "Medicines",
+      subtitle: "Genuine medicines delivered to door.",
+      to: "/prescription", color: "#6366f1", bg: "#e0e7ff",
+      visible: settings.pharmCheck,
+    },
   ].filter(s => s.visible !== false);
-
-  const desktopNav = [
-    { label: "Home", to: "/" },
-    { label: "Doctors", to: "/doctors" },
-    { label: "Lab Tests", to: "/lab-tests" },
-    { label: "Medicines", to: "/prescription" },
-  ];
 
   const bottomNav = [
     { icon: Home, label: "Home", to: "/" },
@@ -121,52 +124,53 @@ const Index = () => {
     { icon: User, label: "Profile", to: "/profile" },
   ];
 
-  useEffect(() => {
-    const t = setInterval(() => setActiveBanner((p) => (p + 1) % banners.length), 4000);
-    return () => clearInterval(t);
-  }, [banners.length]);
-
-  const goToBanner = (idx: number) => {
-    setActiveBanner((idx + banners.length) % banners.length);
-  };
+  const desktopNav = [
+    { label: "Home", to: "/" },
+    { label: "Doctors", to: "/doctors" },
+    { label: "Lab Tests", to: "/lab-tests" },
+    { label: "Medicines", to: "/prescription" },
+  ];
 
   const initial = (name: string) => name?.replace("Dr. ", "").charAt(0) || "D";
-
-  // Avatar background colors cycling
   const avatarColors = ["#2563eb", "#7c3aed", "#059669", "#dc2626"];
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen" style={{ background: "#f4f6fb" }}>
 
-      {/* ─────────────────────────────────────────
-          DESKTOP TOP NAV (md and above)
-      ───────────────────────────────────────── */}
+      {/* ═══════════════════════════════════════════
+          DESKTOP NAV (md+)
+      ═══════════════════════════════════════════ */}
       <nav className="hidden md:flex sticky top-0 z-50 bg-white border-b border-slate-100 shadow-sm">
         <div className="max-w-7xl mx-auto w-full px-8 py-4 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2.5">
-            <div className="h-9 w-9 rounded-xl bg-blue-600 flex items-center justify-center shadow-md shadow-blue-200">
-              <Heart className="h-5 w-5 text-white" fill="white" />
+            <div className="h-10 w-10 flex items-center justify-center">
+              <img src="/logo.png" alt="Aaroksha Logo" className="h-full w-full object-contain" />
             </div>
-            <span className="text-lg font-black text-slate-800 tracking-tight uppercase">
+            <span className="text-lg font-black text-slate-800 tracking-tight">
               {settings.platform_name || "AAROKSHA"}
             </span>
           </Link>
+
           <div className="flex items-center gap-8">
             {desktopNav.map(({ label, to }) => (
-              <Link key={to} to={to} className={`text-sm font-bold transition-colors ${location.pathname === to ? "text-blue-600" : "text-slate-500 hover:text-slate-800"}`}>
+              <Link
+                key={to} to={to}
+                className={`text-sm font-bold transition-colors ${location.pathname === to ? "text-blue-600" : "text-slate-500 hover:text-slate-800"}`}
+              >
                 {label}
               </Link>
             ))}
           </div>
+
           <div className="flex items-center gap-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <input 
-                placeholder="Search..." 
+              <input
+                placeholder="Search..."
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={e => setSearch(e.target.value)}
                 onKeyDown={handleSearch}
-                className="h-10 rounded-xl bg-slate-50 border border-slate-200 pl-9 pr-4 text-sm w-48 outline-none focus:border-blue-300 transition-all" 
+                className="h-10 rounded-xl bg-slate-50 border border-slate-200 pl-9 pr-4 text-sm w-48 outline-none focus:border-blue-300 transition-all"
               />
             </div>
             <Link to="/doctors" className="h-10 px-5 rounded-xl bg-blue-600 text-white text-sm font-bold flex items-center gap-1.5 hover:bg-blue-700 transition-colors shadow-md shadow-blue-200">
@@ -176,9 +180,9 @@ const Index = () => {
         </div>
       </nav>
 
-      {/* ─────────────────────────────────────────
-          DESKTOP HERO (md and above)
-      ───────────────────────────────────────── */}
+      {/* ═══════════════════════════════════════════
+          DESKTOP HERO (md+)
+      ═══════════════════════════════════════════ */}
       <section
         className="hidden md:block relative overflow-hidden"
         style={{ background: "linear-gradient(135deg, #1e3a8a 0%, #2563eb 60%, #38bdf8 100%)" }}
@@ -208,74 +212,64 @@ const Index = () => {
         </div>
       </section>
 
-      {/* ─────────────────────────────────────────
+      {/* ═══════════════════════════════════════════
           MOBILE HEADER (below md)
-      ───────────────────────────────────────── */}
-      <header className="md:hidden bg-white sticky top-0 z-40 border-b border-slate-100">
+      ═══════════════════════════════════════════ */}
+      <header className="md:hidden bg-white sticky top-0 z-40" style={{ boxShadow: "0 1px 0 #e8ecf4" }}>
         <div className="flex items-center justify-between px-4 pt-10 pb-3">
+
+          {/* Brand */}
           <div className="flex items-center gap-2.5">
-            {/* Brand icon */}
-            <div className="h-9 w-9 rounded-xl flex items-center justify-center shadow-lg shadow-blue-200/60 shrink-0"
-              style={{ background: "linear-gradient(135deg, #1d4ed8 0%, #2563eb 60%, #38bdf8 100%)" }}>
-              <Heart className="h-4.5 w-4 text-white" fill="white" />
+            <div className="h-10 w-10 flex items-center justify-center shrink-0">
+              <img src="/logo.png" alt="Aaroksha Logo" className="h-full w-full object-contain" />
             </div>
-            {/* Brand wordmark */}
             <div>
-              <h1
-                className="font-black tracking-tight leading-none"
-                style={{
-                  fontSize: "22px",
-                  background: "linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #0ea5e9 100%)",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                  backgroundClip: "text",
-                  letterSpacing: "-0.03em",
-                }}
-              >
-                AAROKSHA
-              </h1>
-              <p className="text-[10px] text-slate-400 font-semibold flex items-center gap-1 mt-0.5">
-                <MapPin className="h-2.5 w-2.5 text-blue-500" /> Hyderabad, India
+              <p className="font-black text-slate-800 leading-none" style={{ fontSize: "17px", letterSpacing: "-0.02em" }}>
+                {settings.platform_name || "Aaroksha"}
+              </p>
+              <p className="text-[10px] text-slate-400 font-semibold flex items-center gap-0.5 mt-0.5">
+                <MapPin className="h-2.5 w-2.5 text-blue-500" />
+                New Delhi, India
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button className="h-9 w-9 rounded-xl bg-slate-100 flex items-center justify-center">
-              <Bell className="h-4 w-4 text-slate-500" />
-            </button>
-            <Link to={user ? "/profile" : "/auth"} className="h-9 w-9 rounded-xl bg-blue-600 flex items-center justify-center transition-all active:scale-95 shadow-lg shadow-blue-200">
-              <User className="h-4 w-4 text-white" />
-            </Link>
-          </div>
+
+          {/* Bell */}
+          <button className="h-9 w-9 rounded-xl bg-slate-100 flex items-center justify-center relative">
+            <Bell className="h-4.5 w-4 text-slate-500" />
+          </button>
         </div>
-        {/* Search */}
-        <div className="relative px-4 pb-3">
+
+        {/* Search bar */}
+        <div className="relative px-4 pb-4">
           <Search className="absolute left-7 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <input
             placeholder="Search doctors, tests, medicines..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={e => setSearch(e.target.value)}
             onKeyDown={handleSearch}
-            className="w-full h-11 rounded-2xl bg-slate-50 border border-slate-200 pl-10 pr-4 text-sm text-slate-700 placeholder:text-slate-400 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition-all"
+            className="w-full h-11 rounded-2xl pl-10 pr-4 text-sm text-slate-700 placeholder:text-slate-400 outline-none transition-all"
+            style={{
+              background: "#f4f6fb",
+              border: "1.5px solid #e8ecf4",
+            }}
           />
         </div>
       </header>
 
-      {/* ═════════════════════════════════════════
-          MAIN CONTENT (shared, responsive)
-      ═════════════════════════════════════════ */}
+      {/* ═══════════════════════════════════════════
+          MAIN CONTENT
+      ═══════════════════════════════════════════ */}
       <main className="max-w-7xl mx-auto">
-        <div className="px-4 md:px-8 pt-5 md:pt-10 pb-28 md:pb-12 space-y-6 md:space-y-10">
+        <div className="px-4 md:px-8 pt-4 md:pt-10 pb-28 md:pb-12 space-y-5 md:space-y-10">
 
-          {/* ── BANNER CAROUSEL ── */}
+          {/* ── BANNER CAROUSEL ─────────────────────── */}
           <div className="relative select-none">
-            {/* Slider Track */}
             <div
               ref={bannerRef}
-              className="relative overflow-hidden rounded-2xl md:rounded-3xl"
-              style={{ minHeight: "clamp(180px, 45vw, 320px)" }}
+              className="relative overflow-hidden rounded-2xl"
+              style={{ minHeight: "clamp(170px, 48vw, 300px)" }}
             >
-              {/* Slides */}
               <div
                 className="flex transition-transform duration-500 ease-in-out h-full"
                 style={{ transform: `translateX(-${activeBanner * 100}%)` }}
@@ -289,7 +283,6 @@ const Index = () => {
                       className="flex-shrink-0 w-full relative overflow-hidden block"
                     >
                       {isImageOnly ? (
-                        /* ── IMAGE-ONLY MODE: pure image, no text overlay ── */
                         <img
                           src={banner.image!}
                           alt={banner.title}
@@ -298,65 +291,79 @@ const Index = () => {
                           draggable={false}
                         />
                       ) : (
-                        /* ── NORMAL MODE: gradient or image-with-text overlay ── */
+                        /* ── BANNER CARD — matches screenshot style ── */
                         <div
-                          className="w-full relative"
+                          className="w-full flex items-stretch relative overflow-hidden"
                           style={{
                             background: banner.image
                               ? `url(${banner.image}) center/cover no-repeat`
-                              : banner.gradient,
-                            minHeight: "clamp(180px, 45vw, 320px)",
+                              : "linear-gradient(135deg, #1d4ed8 0%, #2563eb 55%, #3b82f6 100%)",
+                            minHeight: "clamp(170px, 48vw, 300px)",
                           }}
                         >
-                          {/* Gradient overlay for text readability */}
-                          <div
-                            className="absolute inset-0"
-                            style={{
-                              background: banner.image
-                                ? "linear-gradient(120deg, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.25) 60%, rgba(0,0,0,0.05) 100%)"
-                                : "linear-gradient(120deg, rgba(0,0,0,0.25) 0%, transparent 70%)",
-                            }}
-                          />
-                          {/* Decorative circles (gradient mode only) */}
-                          {!banner.image && (
-                            <>
-                              <div className="absolute -right-10 -top-10 w-44 h-44 rounded-full opacity-20 bg-white" />
-                              <div className="absolute right-8 -bottom-8 w-28 h-28 rounded-full opacity-10 bg-white" />
-                              <div className="absolute left-1/2 top-0 w-64 h-64 rounded-full opacity-5 bg-white -translate-x-1/2" />
-                            </>
-                          )}
-                          {/* Content */}
-                          <div className="relative z-10 flex items-center justify-between h-full px-5 py-6 md:px-10 md:py-10" style={{ minHeight: "inherit" }}>
-                            <div className="flex-1 max-w-xs md:max-w-lg">
-                              <span className="inline-block bg-white/25 backdrop-blur-md text-white text-[10px] md:text-xs font-black uppercase tracking-widest px-3 py-1 rounded-full mb-3 border border-white/30 shadow-sm">
-                                {banner.badge}
-                              </span>
-                              <h2
-                                className="text-white font-black leading-tight mb-2 md:mb-3 whitespace-pre-line"
-                                style={{ fontSize: "clamp(18px, 5vw, 36px)", textShadow: "0 2px 16px rgba(0,0,0,0.5), 0 1px 4px rgba(0,0,0,0.4)" }}
-                              >
-                                {banner.title.replace("\\n", "\n")}
-                              </h2>
-                              <p
-                                className="font-semibold mb-4 md:mb-6 leading-snug"
-                                style={{ fontSize: "clamp(11px, 2.5vw, 15px)", color: "rgba(255,255,255,0.92)", textShadow: "0 1px 8px rgba(0,0,0,0.5)" }}
-                              >
-                                {banner.subtitle}
-                              </p>
-                              <span
-                                className="inline-flex items-center gap-1.5 bg-white font-black shadow-xl rounded-xl md:rounded-2xl active:scale-95 transition-transform"
-                                style={{ color: banner.ctaColor || "#2563eb", padding: "clamp(8px, 2vw, 12px) clamp(16px, 4vw, 28px)", fontSize: "clamp(11px, 2.5vw, 14px)" }}
-                              >
-                                {banner.cta}
-                                <ChevronRight className="h-3.5 w-3.5 md:h-4 md:w-4" />
-                              </span>
-                            </div>
-                            {!banner.image && (
-                              <div className="shrink-0 ml-3 md:ml-8 select-none" style={{ fontSize: "clamp(52px, 14vw, 110px)", filter: "drop-shadow(0 8px 24px rgba(0,0,0,0.3))" }}>
-                                {banner.emoji}
-                              </div>
-                            )}
+                          {/* Decorative circles */}
+                          <div className="absolute -right-8 -top-8 w-36 h-36 rounded-full opacity-15 bg-white" />
+                          <div className="absolute right-12 -bottom-6 w-20 h-20 rounded-full opacity-10 bg-white" />
+
+                          {/* Left: text content */}
+                          <div className="flex-1 relative z-10 flex flex-col justify-center px-5 py-5 md:px-10 md:py-10">
+                            {/* Badge */}
+                            <span
+                              className="inline-block text-[9px] md:text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full mb-2.5 self-start"
+                              style={{ background: "#facc15", color: "#1e3a8a" }}
+                            >
+                              {banner.badge}
+                            </span>
+
+                            {/* Title */}
+                            <h2
+                              className="text-white font-black leading-tight mb-3 md:mb-4 whitespace-pre-line"
+                              style={{
+                                fontSize: "clamp(20px, 5.5vw, 36px)",
+                                textShadow: "0 2px 10px rgba(0,0,0,0.2)",
+                              }}
+                            >
+                              {banner.title.replace("\\n", "\n")}
+                            </h2>
+
+                            {/* CTA Button */}
+                            <Link
+                              to={banner.to}
+                              onClick={e => e.stopPropagation()}
+                              className="inline-flex items-center gap-1.5 self-start font-black text-blue-700 bg-white rounded-xl active:scale-95 transition-transform"
+                              style={{
+                                fontSize: "clamp(11px, 2.8vw, 14px)",
+                                padding: "clamp(7px, 1.8vw, 11px) clamp(14px, 3.5vw, 22px)",
+                                boxShadow: "0 4px 14px rgba(0,0,0,0.15)",
+                              }}
+                            >
+                              {banner.cta}
+                            </Link>
                           </div>
+
+                          {/* Right: doctor illustration (only when no custom bg image) */}
+                          {!banner.image && (
+                            <div
+                              className="shrink-0 flex items-end justify-center relative z-10 overflow-hidden"
+                              style={{
+                                width: "clamp(110px, 30vw, 200px)",
+                                background: "linear-gradient(180deg, #0f766e 0%, #134e4a 100%)",
+                                borderRadius: "0 16px 16px 0",
+                              }}
+                            >
+                              <img
+                                src="/doctor-banner.png"
+                                alt="Doctor"
+                                className="block object-contain select-none"
+                                style={{
+                                  width: "100%",
+                                  maxHeight: "clamp(160px, 44vw, 290px)",
+                                  objectPosition: "bottom center",
+                                }}
+                                draggable={false}
+                              />
+                            </div>
+                          )}
                         </div>
                       )}
                     </Link>
@@ -364,18 +371,18 @@ const Index = () => {
                 })}
               </div>
 
-              {/* Left/Right arrows (visible on md+) */}
+              {/* Desktop left/right arrows */}
               {banners.length > 1 && (
                 <>
                   <button
-                    onClick={(e) => { e.preventDefault(); goToBanner(activeBanner - 1); }}
+                    onClick={e => { e.preventDefault(); goToBanner(activeBanner - 1); }}
                     className="hidden md:flex absolute left-3 top-1/2 -translate-y-1/2 z-20 h-9 w-9 rounded-full bg-black/30 hover:bg-black/50 backdrop-blur-md items-center justify-center text-white transition-all border border-white/20 shadow-lg"
                     aria-label="Previous banner"
                   >
                     <ChevronRight className="h-4 w-4 rotate-180" />
                   </button>
                   <button
-                    onClick={(e) => { e.preventDefault(); goToBanner(activeBanner + 1); }}
+                    onClick={e => { e.preventDefault(); goToBanner(activeBanner + 1); }}
                     className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 z-20 h-9 w-9 rounded-full bg-black/30 hover:bg-black/50 backdrop-blur-md items-center justify-center text-white transition-all border border-white/20 shadow-lg"
                     aria-label="Next banner"
                   >
@@ -383,22 +390,16 @@ const Index = () => {
                   </button>
                 </>
               )}
-
-
             </div>
 
-            {/* Dot navigation */}
+            {/* Dot nav */}
             {banners.length > 1 && (
               <div className="flex justify-center gap-2 mt-3">
                 {banners.map((_, i) => (
                   <button
                     key={i}
                     onClick={() => goToBanner(i)}
-                    className={`rounded-full transition-all duration-300 ${
-                      i === activeBanner
-                        ? "w-7 h-2 bg-blue-600"
-                        : "w-2 h-2 bg-slate-300 hover:bg-slate-400"
-                    }`}
+                    className={`rounded-full transition-all duration-300 ${i === activeBanner ? "w-6 h-1.5 bg-blue-600" : "w-1.5 h-1.5 bg-slate-300 hover:bg-slate-400"}`}
                     aria-label={`Go to slide ${i + 1}`}
                   />
                 ))}
@@ -406,154 +407,151 @@ const Index = () => {
             )}
           </div>
 
-          {/* ── OUR SERVICES ── */}
+          {/* ── OUR SERVICES ───────────────────────── */}
           <div>
-            <h2 className="text-base md:text-lg font-black text-slate-800 mb-3 md:mb-4">Our Services</h2>
+            {/* Section header */}
+            <div className="flex items-center justify-between mb-3 md:mb-4">
+              <div>
+                <h2 className="text-base md:text-lg font-black text-slate-800 leading-tight">Our Services</h2>
+                <p className="text-[11px] md:text-xs font-semibold mt-0.5" style={{ color: "#f97316" }}>
+                  Comprehensive care at your fingertips
+                </p>
+              </div>
+              <Link to="/doctors" className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-0.5">
+                View All <ChevronRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+
+            {/* Service cards */}
             <div className="grid grid-cols-3 gap-2.5 md:gap-4">
-              {services.map((s) => (
+              {services.map(s => (
                 <Link
                   key={s.to}
                   to={s.to}
-                  className="bg-white rounded-2xl md:rounded-3xl p-3.5 md:p-5 flex flex-col items-center text-center border border-slate-100 hover:shadow-lg active:scale-95 transition-all duration-150 group"
+                  className="bg-white rounded-2xl md:rounded-3xl p-3 md:p-5 flex flex-col items-start text-left border active:scale-95 transition-all duration-150 group"
+                  style={{ borderColor: "#eef0f7", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}
                 >
+                  {/* Icon box */}
                   <div
-                    className="h-12 w-12 md:h-16 md:w-16 rounded-xl md:rounded-2xl flex items-center justify-center mb-2 md:mb-3 group-hover:scale-110 transition-transform"
+                    className="h-11 w-11 md:h-14 md:w-14 rounded-xl md:rounded-2xl flex items-center justify-center mb-2.5 md:mb-3 group-hover:scale-110 transition-transform shrink-0"
                     style={{ backgroundColor: s.bg }}
                   >
-                    <s.icon className="h-6 w-6 md:h-8 md:w-8" style={{ color: s.color }} />
+                    <s.icon className="h-5 w-5 md:h-7 md:w-7" style={{ color: s.color }} />
                   </div>
-                  <p className="text-[11px] md:text-sm font-black text-slate-700 leading-tight">{s.title}</p>
-                  <p className="text-[9px] md:text-[11px] text-slate-400 font-medium mt-0.5 leading-tight">{s.subtitle}</p>
+
+                  <p className="text-[11px] md:text-sm font-black text-slate-800 leading-tight mb-1">{s.title}</p>
+                  <p className="text-[9px] md:text-[10px] text-slate-400 font-medium leading-snug">{s.subtitle}</p>
                 </Link>
               ))}
             </div>
           </div>
 
-          {/* ── TOP DOCTORS ── */}
-          <div>
-            <div className="flex items-center justify-between mb-3 md:mb-4">
-              <h2 className="text-base md:text-lg font-black text-slate-800">Top Doctors</h2>
-              <Link to="/doctors" className="text-xs md:text-sm font-bold text-blue-600 flex items-center gap-0.5">
-                See All <ChevronRight className="h-3.5 w-3.5" />
-              </Link>
-            </div>
-
-            {/* Mobile: horizontal scroll, Desktop: grid */}
-            <div className="md:hidden flex gap-3 overflow-x-auto pb-2 -mx-4 px-4" style={{ scrollbarWidth: "none" }}>
-              {doctors.map((doc: any, idx) => (
-                <div
-                  key={doc.id}
-                  className="flex-shrink-0 w-[140px] bg-white rounded-2xl p-3 flex flex-col items-center text-center border border-slate-100 active:scale-95 transition-all relative"
-                >
-                  <div
-                    className="h-11 w-11 rounded-xl flex items-center justify-center mb-2 text-white font-black text-lg shadow-md overflow-hidden"
-                    style={{ backgroundColor: avatarColors[idx % 4], boxShadow: `0 4px 12px ${avatarColors[idx % 4]}40` }}
-                  >
-                    {doc.image_url && doc.image_url.startsWith("http") ? (
-                      <img src={doc.image_url} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      initial(doc.name)
-                    )}
-                  </div>
-                  <p className="text-[11px] font-black text-slate-800 leading-tight mb-0.5 w-full truncate">{doc.name}</p>
-                  <p className="text-[9px] font-bold text-blue-600 mb-1 w-full truncate">{doc.specialty}</p>
-
-                  {/* Hospital Link */}
-                  {(doc.hospital_name || doc.hospitalName) && (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); navigate(`/doctors?hospital=${doc.hospital_id || doc.hospitalId}`); }}
-                      className="flex items-center justify-center gap-1 w-full relative z-10 hover:opacity-80 transition-opacity mb-2 bg-slate-50 py-1 rounded-md"
-                    >
-                      <MapPin className="h-2.5 w-2.5 text-slate-400" />
-                      <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest truncate">{doc.hospital_name || doc.hospitalName}</span>
-                    </button>
-                  )}
-
-                  <div className="flex items-center justify-center gap-1.5 mb-2 w-full">
-                    <span className="flex items-center gap-0.5 text-[9px] font-black text-slate-600">
-                      <Star className="h-2.5 w-2.5 text-amber-400 fill-amber-400" />{doc.rating || 4.8}
-                    </span>
-                    <span className="flex items-center gap-0.5 text-[9px] font-bold text-slate-400">
-                      <Clock className="h-2.5 w-2.5" />{doc.experience}y
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => navigate(`/book-appointment/${doc.id}`)}
-                    className="w-full rounded-lg py-1.5 text-[9px] font-black text-white transition-all active:scale-95"
-                    style={{ backgroundColor: avatarColors[idx % 4] }}
-                  >
-                    Book Now
-                  </button>
+          {/* ── TOP DOCTORS ─────────────────────────── */}
+          {doctors.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-3 md:mb-4">
+                <div>
+                  <h2 className="text-base md:text-lg font-black text-slate-800">Top Doctors</h2>
+                  <p className="text-[11px] font-semibold mt-0.5" style={{ color: "#f97316" }}>
+                    Trusted specialists near you
+                  </p>
                 </div>
-              ))}
-            </div>
+                <Link to="/doctors" className="text-xs font-bold text-blue-600 flex items-center gap-0.5 hover:underline">
+                  View All <ChevronRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
 
-            {/* Desktop grid */}
-            <div className="hidden md:grid grid-cols-4 gap-4">
-              {doctors.map((doc: any, idx) => (
-                <div
-                  key={doc.id}
-                  className="bg-white rounded-3xl p-5 flex flex-col items-center text-center border border-slate-100 hover:shadow-xl hover:-translate-y-1 transition-all group relative"
-                >
+              {/* Mobile: horizontal scroll */}
+              <div className="md:hidden flex gap-3 overflow-x-auto pb-2 -mx-4 px-4" style={{ scrollbarWidth: "none" }}>
+                {doctors.map((doc: any, idx) => (
                   <div
-                    className="h-16 w-16 rounded-2xl flex items-center justify-center mb-3 text-white font-black text-2xl shadow-lg group-hover:scale-110 transition-transform overflow-hidden"
-                    style={{ backgroundColor: avatarColors[idx % 4], boxShadow: `0 6px 16px ${avatarColors[idx % 4]}40` }}
-                  >
-                    {doc.image_url && doc.image_url.startsWith("http") ? (
-                      <img src={doc.image_url} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      initial(doc.name)
-                    )}
-                  </div>
-                  <p className="text-sm font-black text-slate-800 leading-tight mb-0.5 line-clamp-1">{doc.name}</p>
-                  <p className="text-[11px] font-bold text-blue-600 mb-2 line-clamp-1">{doc.specialty}</p>
-
-                  {/* Hospital Link */}
-                  {(doc.hospital_name || doc.hospitalName) && (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); navigate(`/doctors?hospital=${doc.hospital_id || doc.hospitalId}`); }}
-                      className="flex items-center justify-center gap-1 w-full bg-slate-50 py-1.5 rounded-lg mb-3 hover:bg-slate-100 transition-colors relative z-10"
-                    >
-                      <MapPin className="h-3 w-3 text-slate-500" />
-                      <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest truncate">{doc.hospital_name || doc.hospitalName}</span>
-                    </button>
-                  )}
-
-                  <div className="flex items-center justify-center gap-2 mb-3 w-full">
-                    <span className="flex items-center gap-0.5 text-xs font-black text-slate-600">
-                      <Star className="h-3 w-3 text-amber-400 fill-amber-400" />{doc.rating || 4.8}
-                    </span>
-                    <span className="flex items-center gap-0.5 text-xs font-bold text-slate-400">
-                      <Clock className="h-3 w-3" />{doc.experience} yrs
-                    </span>
-                  </div>
-                  <button
+                    key={doc.id}
                     onClick={() => navigate(`/book-appointment/${doc.id}`)}
-                    className="w-full rounded-xl py-2.5 text-xs font-black text-white transition-all active:scale-95"
-                    style={{ backgroundColor: avatarColors[idx % 4] }}
+                    className="flex-shrink-0 w-[130px] bg-white rounded-2xl p-3 flex flex-col items-center text-center border active:scale-95 transition-all cursor-pointer"
+                    style={{ borderColor: "#eef0f7", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}
                   >
-                    Book Now
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
+                    <div
+                      className="h-12 w-12 rounded-full flex items-center justify-center mb-2 text-white font-black text-lg shadow-md overflow-hidden"
+                      style={{ backgroundColor: avatarColors[idx % 4] }}
+                    >
+                      {doc.image_url && doc.image_url.startsWith("http") ? (
+                        <img src={doc.image_url} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        initial(doc.name)
+                      )}
+                    </div>
+                    <p className="text-[11px] font-black text-slate-800 leading-tight mb-0.5 w-full truncate">{doc.name}</p>
+                    <p className="text-[9px] font-bold text-blue-600 mb-1.5 w-full truncate">{doc.specialty}</p>
+                    <div className="flex items-center justify-center gap-1.5 mb-2">
+                      <span className="flex items-center gap-0.5 text-[9px] font-black text-slate-600">
+                        <Star className="h-2.5 w-2.5 text-amber-400 fill-amber-400" />{doc.rating || 4.8}
+                      </span>
+                      <span className="flex items-center gap-0.5 text-[9px] font-bold text-slate-400">
+                        <Clock className="h-2.5 w-2.5" />{doc.experience}y
+                      </span>
+                    </div>
+                    <button
+                      className="w-full rounded-lg py-1.5 text-[9px] font-black text-white"
+                      style={{ backgroundColor: avatarColors[idx % 4] }}
+                    >
+                      Book Now
+                    </button>
+                  </div>
+                ))}
+              </div>
 
-          {/* ── CTA BANNER ── */}
+              {/* Desktop: grid */}
+              <div className="hidden md:grid grid-cols-4 gap-4">
+                {doctors.map((doc: any, idx) => (
+                  <div
+                    key={doc.id}
+                    className="bg-white rounded-3xl p-5 flex flex-col items-center text-center border hover:shadow-xl hover:-translate-y-1 transition-all group cursor-pointer"
+                    style={{ borderColor: "#eef0f7" }}
+                    onClick={() => navigate(`/book-appointment/${doc.id}`)}
+                  >
+                    <div
+                      className="h-16 w-16 rounded-full flex items-center justify-center mb-3 text-white font-black text-2xl shadow-lg group-hover:scale-110 transition-transform overflow-hidden"
+                      style={{ backgroundColor: avatarColors[idx % 4] }}
+                    >
+                      {doc.image_url && doc.image_url.startsWith("http") ? (
+                        <img src={doc.image_url} alt="" className="h-full w-full object-cover" />
+                      ) : initial(doc.name)}
+                    </div>
+                    <p className="text-sm font-black text-slate-800 leading-tight mb-0.5 line-clamp-1">{doc.name}</p>
+                    <p className="text-[11px] font-bold text-blue-600 mb-3 line-clamp-1">{doc.specialty}</p>
+                    <div className="flex items-center justify-center gap-2 mb-3">
+                      <span className="flex items-center gap-0.5 text-xs font-black text-slate-600">
+                        <Star className="h-3 w-3 text-amber-400 fill-amber-400" />{doc.rating || 4.8}
+                      </span>
+                      <span className="flex items-center gap-0.5 text-xs font-bold text-slate-400">
+                        <Clock className="h-3 w-3" />{doc.experience} yrs
+                      </span>
+                    </div>
+                    <button
+                      className="w-full rounded-xl py-2.5 text-xs font-black text-white"
+                      style={{ backgroundColor: avatarColors[idx % 4] }}
+                    >
+                      Book Now
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── CTA BANNER ────────────────────────── */}
           <div
             className="rounded-3xl overflow-hidden relative"
             style={{ background: "linear-gradient(135deg, #2563eb 0%, #38bdf8 100%)" }}
           >
-            {/* Blob decoration */}
             <div className="absolute -right-10 -top-10 w-40 h-40 rounded-full opacity-20 bg-white" />
             <div className="absolute left-1/3 -bottom-8 w-32 h-32 rounded-full opacity-10 bg-white" />
-
-            <div className="relative z-10 p-6 md:p-10 md:flex md:items-center md:justify-between text-center md:text-left">
-              <div className="md:max-w-xl">
-                <h2 className="text-xl md:text-3xl font-black text-white leading-tight mb-2 md:mb-3">
+            <div className="relative z-10 p-6 md:p-10 md:flex md:items-center md:justify-between">
+              <div className="md:max-w-xl mb-4 md:mb-0">
+                <h2 className="text-xl md:text-3xl font-black text-white leading-tight mb-2">
                   Ready to Take Care of Your Health?
                 </h2>
-                <p className="text-sm text-blue-100 font-medium mb-5 md:mb-0 leading-relaxed">
+                <p className="text-sm text-blue-100 font-medium leading-relaxed">
                   Join thousands of patients who trust Aaroksha. Book your first appointment today.
                 </p>
               </div>
@@ -570,12 +568,12 @@ const Index = () => {
         </div>
       </main>
 
-      {/* ─────────────────────────────────────────
+      {/* ═══════════════════════════════════════════
           MOBILE BOTTOM NAV
-      ───────────────────────────────────────── */}
+      ═══════════════════════════════════════════ */}
       <nav
-        className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-100"
-        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+        className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white"
+        style={{ borderTop: "1.5px solid #eef0f7", paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div className="grid grid-cols-5">
           {bottomNav.map(({ icon: Icon, label, to }) => {
@@ -584,13 +582,15 @@ const Index = () => {
               <Link
                 key={label}
                 to={to}
-                className={`flex flex-col items-center gap-1 py-3 transition-colors ${active ? "text-blue-600" : "text-slate-400"}`}
+                className={`flex flex-col items-center gap-1 py-2.5 transition-colors relative ${active ? "text-blue-600" : "text-slate-400"}`}
               >
+                {active && (
+                  <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-blue-600 rounded-full" />
+                )}
                 <Icon className={`h-5 w-5 transition-transform ${active ? "scale-110" : ""}`} />
                 <span className={`text-[9px] font-black tracking-tight ${active ? "text-blue-600" : "text-slate-400"}`}>
                   {label}
                 </span>
-                {active && <div className="absolute bottom-0 h-0.5 w-8 bg-blue-600 rounded-full" />}
               </Link>
             );
           })}
