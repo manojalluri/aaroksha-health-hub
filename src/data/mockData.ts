@@ -7,6 +7,16 @@ export interface Doctor {
   fee: number;
   image: string;
   available: boolean;
+  hospitalId?: string;
+  hospitalName?: string;
+}
+
+export interface Hospital {
+  id: string;
+  name: string;
+  location: string;
+  rating: number;
+  image: string;
 }
 
 export interface TimeSlot {
@@ -38,15 +48,22 @@ export interface PatientDetails {
   address: string;
 }
 
+export const hospitals: Hospital[] = [
+  { id: "h1", name: "Apollo Clinics", location: "Banjara Hills", rating: 4.8, image: "🏥" },
+  { id: "h2", name: "Yashoda Hospitals", location: "Secunderabad", rating: 4.9, image: "🏥" },
+  { id: "h3", name: "Care Hospitals", location: "Hi-Tech City", rating: 4.7, image: "🏥" },
+  { id: "h4", name: "KIMS Hospital", location: "Kondapur", rating: 4.6, image: "🏥" },
+];
+
 export const doctors: Doctor[] = [
-  { id: "1", name: "Dr. Rajesh Kumar", specialty: "General Physician", experience: 15, rating: 4.8, fee: 500, image: "👨‍⚕️", available: true },
-  { id: "2", name: "Dr. Priya Sharma", specialty: "Cardiologist", experience: 12, rating: 4.9, fee: 800, image: "👩‍⚕️", available: true },
-  { id: "3", name: "Dr. Anil Reddy", specialty: "Orthopedic", experience: 20, rating: 4.7, fee: 700, image: "👨‍⚕️", available: true },
-  { id: "4", name: "Dr. Sunitha Rao", specialty: "Dermatologist", experience: 8, rating: 4.6, fee: 600, image: "👩‍⚕️", available: true },
-  { id: "5", name: "Dr. Venkat Rao", specialty: "Dentist", experience: 10, rating: 4.5, fee: 400, image: "👨‍⚕️", available: true },
-  { id: "6", name: "Dr. Meena Kumari", specialty: "Pediatrician", experience: 14, rating: 4.8, fee: 550, image: "👩‍⚕️", available: true },
-  { id: "7", name: "Dr. Srinivas Gupta", specialty: "ENT Specialist", experience: 18, rating: 4.7, fee: 650, image: "👨‍⚕️", available: true },
-  { id: "8", name: "Dr. Kavitha Nair", specialty: "Gynecologist", experience: 16, rating: 4.9, fee: 750, image: "👩‍⚕️", available: true },
+  { id: "1", name: "Dr. Rajesh Kumar", specialty: "General Physician", experience: 15, rating: 4.8, fee: 500, image: "👨‍⚕️", available: true, hospitalId: "h1", hospitalName: "Apollo Clinics" },
+  { id: "2", name: "Dr. Priya Sharma", specialty: "Cardiologist", experience: 12, rating: 4.9, fee: 800, image: "👩‍⚕️", available: true, hospitalId: "h2", hospitalName: "Yashoda Hospitals" },
+  { id: "3", name: "Dr. Anil Reddy", specialty: "Orthopedic", experience: 20, rating: 4.7, fee: 700, image: "👨‍⚕️", available: true, hospitalId: "h1", hospitalName: "Apollo Clinics" },
+  { id: "4", name: "Dr. Sunitha Rao", specialty: "Dermatologist", experience: 8, rating: 4.6, fee: 600, image: "👩‍⚕️", available: true, hospitalId: "h3", hospitalName: "Care Hospitals" },
+  { id: "5", name: "Dr. Venkat Rao", specialty: "Dentist", experience: 10, rating: 4.5, fee: 400, image: "👨‍⚕️", available: true, hospitalId: "h4", hospitalName: "KIMS Hospital" },
+  { id: "6", name: "Dr. Meena Kumari", specialty: "Pediatrician", experience: 14, rating: 4.8, fee: 550, image: "👩‍⚕️", available: true, hospitalId: "h2", hospitalName: "Yashoda Hospitals" },
+  { id: "7", name: "Dr. Srinivas Gupta", specialty: "ENT Specialist", experience: 18, rating: 4.7, fee: 650, image: "👨‍⚕️", available: true, hospitalId: "h3", hospitalName: "Care Hospitals" },
+  { id: "8", name: "Dr. Kavitha Nair", specialty: "Gynecologist", experience: 16, rating: 4.9, fee: 750, image: "👩‍⚕️", available: true, hospitalId: "h4", hospitalName: "KIMS Hospital" },
 ];
 
 export const timeSlots: TimeSlot[] = [
