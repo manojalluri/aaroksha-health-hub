@@ -23,6 +23,7 @@ import SuperAdminLogin from "./pages/admin/SuperAdminLogin";
 
 import LogisticsDashboard from "./pages/admin/LogisticsDashboard";
 import LogisticsLogin from "./pages/admin/LogisticsLogin";
+import InstallPrompt from "./components/InstallPrompt";
 
 import { getSettings, syncSettingsFromSupabase } from "./lib/settingsSync";
 import { useState, useEffect } from "react";
@@ -120,6 +121,7 @@ const App = () => {
           <Sonner />
           <BrowserRouter>
             <AppRoutes />
+            <InstallPrompt />
           </BrowserRouter>
         </TooltipProvider>
       </QueryClientProvider>
