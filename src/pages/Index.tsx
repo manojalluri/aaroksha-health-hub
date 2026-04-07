@@ -182,7 +182,7 @@ const Index = () => {
       >
         <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full opacity-10 bg-white" />
         <div className="absolute bottom-0 left-1/4 w-72 h-72 rounded-full opacity-5 bg-white" />
-        <div className="max-w-7xl mx-auto px-8 py-16 relative z-10">
+        <div className="max-w-7xl mx-auto px-8 py-12 relative z-10">
           <div className="max-w-2xl">
             <span className="inline-flex items-center gap-2 bg-white/15 text-white text-xs font-bold px-4 py-2 rounded-full mb-5 border border-white/20">
               <MapPin className="h-3.5 w-3.5" /> Bhimavaram · 50,000+ Happy Patients
@@ -209,7 +209,7 @@ const Index = () => {
           MOBILE HEADER (below md)
       ───────────────────────────────────────── */}
       <header className="md:hidden bg-white sticky top-0 z-40 border-b border-slate-100">
-        <div className="flex items-center justify-between px-4 pt-10 pb-3">
+        <div className="flex items-center justify-between px-4 pt-5 pb-3">
           <div className="flex items-center gap-2.5">
             {/* Brand icon removed */}
             {/* Brand wordmark */}
@@ -242,15 +242,17 @@ const Index = () => {
           </div>
         </div>
         {/* Search */}
-        <div className="relative px-4 pb-3">
-          <Search className="absolute left-7 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <input
-            placeholder="Search doctors, tests, medicines..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={handleSearch}
-            className="w-full h-11 rounded-2xl bg-slate-50 border border-slate-200 pl-10 pr-4 text-sm text-slate-700 placeholder:text-slate-400 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition-all"
-          />
+        <div className="px-4 pb-3">
+          <div className="relative">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              placeholder="Search doctors, tests, medicines..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={handleSearch}
+              className="w-full h-11 rounded-2xl bg-slate-50 border border-slate-200 pl-10 pr-4 text-sm text-slate-700 placeholder:text-slate-400 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition-all"
+            />
+          </div>
         </div>
       </header>
 
@@ -258,7 +260,7 @@ const Index = () => {
           MAIN CONTENT (shared, responsive)
       ═════════════════════════════════════════ */}
       <main className="max-w-7xl mx-auto">
-        <div className="px-4 md:px-8 pt-5 md:pt-10 pb-28 md:pb-12 space-y-6 md:space-y-10">
+        <div className="px-4 md:px-8 pt-2 md:pt-6 pb-28 md:pb-12 space-y-6 md:space-y-10">
 
           {/* ── BANNER CAROUSEL ── */}
           <div className="relative select-none">

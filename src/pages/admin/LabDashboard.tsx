@@ -8,7 +8,7 @@ import {
   CheckCircle, Users, Phone, ChevronDown, XCircle,
   Upload, FileText, MessageCircle, Send, AlertCircle,
   Calendar, ToggleLeft, ToggleRight, Save, UserCog, Stethoscope,
-  Download, FileSpreadsheet, Briefcase
+  Download, FileSpreadsheet, Briefcase, LogOut
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
@@ -196,6 +196,7 @@ const StatusBadge = ({ status }: { status: string }) => {
 // ─── Main Component ────────────────────────────────────────────────────────────
 const LabDashboard = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [partnerId, setPartnerId] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(true);
 

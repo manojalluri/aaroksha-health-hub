@@ -4,7 +4,7 @@ import {
   Upload, Camera, CheckCircle, Clock, Package, Loader2,
   ShieldCheck, MapPin, Phone, User, ChevronLeft,
   Home, Calendar, FlaskConical, Pill, Plus, Minus, Trash2,
-  ChevronRight, Search, ShoppingCart, KeyRound, Copy, Check,
+  ChevronRight, Search, ShoppingCart, KeyRound, Copy, Check, AlertTriangle
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
@@ -78,6 +78,7 @@ const PrescriptionPage = () => {
   const [codeCopied, setCodeCopied] = useState(false);
   const [autoConfirm, setAutoConfirm] = useState(false);
   const [isExpress, setIsExpress] = useState(false);
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
   const copyCode = (code: string) => {
     navigator.clipboard.writeText(code).then(() => {
@@ -199,6 +200,26 @@ const PrescriptionPage = () => {
       clearInterval(interval);
       if (step === "processing") toast.error("Pharmacist is taking longer. Please refresh.");
     }, 300000);
+  };
+
+  const cancelOrder = async (id: string) => {
+    if (!window.confirm("Are you sure you want to cancel this order?")) return;
+    
+    try {
+      const { error } = await supabase
+        .from("prescriptions")
+        .update({ status: "cancelled" })
+        .eq("id", id);
+      
+      if (error) throw error;
+      
+      toast.success("Order cancelled successfully");
+      refetchOrders();
+      setExpandedOrderId(null);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to cancel order");
+    }
   };
 
   // Calculated totals
@@ -346,85 +367,168 @@ const PrescriptionPage = () => {
           ) : (
             myOrders.map((order) => {
               const meds = Array.isArray(order.medicines) ? order.medicines as Medicine[] : [];
+              const s_raw = order.status;
+              const isPaid = order.payment_status === "paid";
+              
               const statusCfg: Record<string, { cls: string, label: string }> = {
                 pending: { cls: "bg-amber-100 text-amber-700", label: "Pending Review" },
-                reviewed: { cls: "bg-blue-100 text-blue-700", label: "Reviewed - Payment Pending" },
+                reviewed: { 
+                  cls: isPaid ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700", 
+                  label: isPaid ? "Paid - Preparing" : "Reviewed - Pay Now" 
+                },
                 paid: { cls: "bg-purple-100 text-purple-700", label: "Paid" },
                 dispatched: { cls: "bg-purple-100 text-purple-700", label: "Dispatched (Out for Delivery)" },
                 completed: { cls: "bg-green-100 text-green-700", label: "Delivered Successfully" },
                 rejected: { cls: "bg-red-100 text-red-600", label: "Rejected" },
+                cancelled: { cls: "bg-slate-100 text-slate-500", label: "Cancelled" },
               };
-              const s = statusCfg[order.status] || { cls: "bg-slate-100 text-slate-600", label: order.status };
+              const s = statusCfg[s_raw] || { cls: "bg-slate-100 text-slate-600", label: s_raw };
               
               const isActionable = order.status === "reviewed" && !order.payment_status;
+              const isExpanded = expandedOrderId === order.id;
 
               return (
-                <div key={order.id} className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                  <div className="px-5 py-4 border-b border-slate-50 flex items-center justify-between">
+                <div 
+                  key={order.id} 
+                  onClick={() => setExpandedOrderId(isExpanded ? null : order.id)}
+                  className={`bg-white rounded-2xl border transition-all duration-300 overflow-hidden cursor-pointer ${
+                    isExpanded 
+                      ? "border-green-200 shadow-xl shadow-green-900/5 ring-1 ring-green-100" 
+                      : "border-slate-100 shadow-sm hover:border-slate-200"
+                  }`}
+                >
+                  <div className={`px-6 py-5 flex items-center justify-between ${isExpanded ? "bg-green-50/30" : ""}`}>
                     <div>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                        Order ID: {order.order_id || `#${order.id.slice(0, 6)}`}
-                      </p>
-                      <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded-md ${s.cls}`}>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <Package className={`h-3.5 w-3.5 ${isExpanded ? "text-green-600" : "text-slate-400"}`} />
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                          Order ID: {order.order_id || `#${order.id.slice(0, 6)}`}
+                        </p>
+                      </div>
+                      <span className={`text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-xl inline-block ${s.cls}`}>
                         {s.label}
                       </span>
                     </div>
                     <div className="text-right">
-                      <p className="text-[9px] font-bold text-slate-400">
+                      <p className="text-xs font-black text-slate-800">
                         {new Date(order.created_at).toLocaleDateString("en-IN", { month: "short", day: "numeric" })}
                       </p>
+                      <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-tighter">View Details {isExpanded ? "↑" : "↓"}</p>
                     </div>
                   </div>
                   
-                  <div className="p-5 space-y-4">
-                    {order.status === "rejected" && order.admin_note && (
-                      <div className="bg-red-50 p-3 rounded-xl border border-red-100 text-xs text-red-600 font-medium">
-                        <strong className="font-black">Reason: </strong>{order.admin_note}
-                      </div>
-                    )}
-                    
-                    {meds.length > 0 && (
+                  {isExpanded && (
+                    <div className="p-6 pt-2 space-y-5 animate-in fade-in slide-in-from-top-2 duration-300">
+                      <div className="h-px bg-gradient-to-r from-transparent via-slate-100 to-transparent mb-4" />
+                      
+                      {order.status === "rejected" && order.admin_note && (
+                        <div className="bg-red-50 p-4 rounded-2xl border border-red-100 text-xs text-red-600 font-medium flex gap-3">
+                          <AlertTriangle className="h-4 w-4 shrink-0" />
+                          <p><strong className="font-black">Reason: </strong>{order.admin_note}</p>
+                        </div>
+                      )}
+                      
+                      {meds.length > 0 ? (
+                        <div>
+                          <div className="flex items-center gap-2 mb-3">
+                            <Pill className="h-3.5 w-3.5 text-green-600" />
+                            <p className="text-[11px] font-black text-slate-800 uppercase tracking-widest">Items Detail</p>
+                          </div>
+                          <div className="space-y-2.5 bg-slate-50/50 rounded-2xl p-4 border border-slate-50">
+                            {meds.map((m, idx) => (
+                              <div key={idx} className="flex justify-between items-center">
+                                <div className="flex flex-col">
+                                  <span className="text-xs font-black text-slate-700">{m.name}</span>
+                                  <span className="text-[10px] font-bold text-slate-400">{m.dosage || "1 unit"}</span>
+                                </div>
+                                <div className="text-right">
+                                  <span className="text-xs font-black text-slate-800">
+                                    {m.available ? `₹${m.price * (m.qty || 1)}` : "Out of stock"}
+                                  </span>
+                                  <p className="text-[9px] font-bold text-slate-400">Qty: {m.qty || 1}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100 flex gap-3">
+                          <Clock className="h-4 w-4 text-amber-500 shrink-0" />
+                          <p className="text-[11px] font-bold text-amber-700 leading-relaxed">
+                            Our pharmacist is currently verifying your items. We'll update the prices shortly.
+                          </p>
+                        </div>
+                      )}
+                      
+                      {/* Delivery Info */}
                       <div>
-                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Pharmacist Details</p>
-                        <div className="space-y-2">
-                          {meds.map((m, idx) => (
-                            <div key={idx} className="flex justify-between items-center text-xs">
-                              <span className="font-medium text-slate-700">
-                                {m.name} <span className="text-[9px] text-slate-400">({m.qty || 1}x)</span>
-                              </span>
-                              <span className="font-black text-slate-800">
-                                {m.available ? `₹${m.price * (m.qty || 1)}` : "Out of stock"}
-                              </span>
-                            </div>
-                          ))}
+                        <div className="flex items-center gap-2 mb-3">
+                          <MapPin className="h-3.5 w-3.5 text-green-600" />
+                          <p className="text-[11px] font-black text-slate-800 uppercase tracking-widest">Delivery To</p>
+                        </div>
+                        <div className="bg-slate-50/50 rounded-2xl p-4 border border-slate-50">
+                           <p className="text-xs font-black text-slate-700 mb-1">{order.patient_name}</p>
+                           <p className="text-xs font-medium text-slate-500 leading-relaxed">{order.delivery_address}</p>
+                           {order.delivery_code && (
+                             <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
+                               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Delivery Code</p>
+                               <span className="text-sm font-black text-green-600 tracking-widest font-mono bg-green-50 px-3 py-1 rounded-lg">
+                                 {order.delivery_code}
+                               </span>
+                             </div>
+                           )}
                         </div>
                       </div>
-                    )}
-                    
-                    {order.grand_total > 0 && (
-                      <div className="pt-3 border-t border-dashed border-slate-100 flex justify-between items-center">
-                        <span className="text-sm font-bold text-slate-600">Total Amount</span>
-                        <span className="text-base font-black text-green-600">₹{order.grand_total}</span>
-                      </div>
-                    )}
 
-                    {isActionable && (
-                      <button
-                        onClick={() => {
-                          setMainTab("upload_flow");
-                          setPrescriptionId(order.id);
-                          setMedicines(meds);
-                          setPrescriptionRecord(order as PrescriptionRecord);
-                          setConfirmedOrderId(order.order_id || "");
-                          setAddress(order.delivery_address || "");
-                          setStep("review");
-                        }}
-                        className="w-full mt-2 py-3 rounded-xl bg-green-600 text-xs font-black text-white shadow-md shadow-green-200"
-                      >
-                        Proceed to Payment
-                      </button>
-                    )}
-                  </div>
+                      {order.grand_total > 0 && (
+                        <div className="pt-4 border-t border-dashed border-slate-200">
+                          <div className="flex justify-between items-center mb-2">
+                             <span className="text-xs font-bold text-slate-500">Bill Summary</span>
+                             <div className="text-right">
+                               <p className="text-[9px] font-bold text-slate-400 uppercase">Paid via PhonePe</p>
+                             </div>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm font-black text-slate-800 uppercase tracking-tight">Total Amount</span>
+                            <span className="text-2xl font-black text-green-600">₹{order.grand_total}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      { (order.status === "pending" || order.status === "reviewed") && (
+                        <div className="pt-2 flex gap-3">
+                          {isActionable && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setMainTab("upload_flow");
+                                setPrescriptionId(order.id);
+                                setMedicines(meds);
+                                setPrescriptionRecord(order as PrescriptionRecord);
+                                setConfirmedOrderId(order.order_id || "");
+                                setAddress(order.delivery_address || "");
+                                setStep("review");
+                              }}
+                              className="flex-1 py-4 rounded-xl bg-green-600 text-sm font-black text-white shadow-xl shadow-green-200 active:scale-95 transition-all"
+                            >
+                              Pay ₹{order.grand_total}
+                            </button>
+                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              cancelOrder(order.id);
+                            }}
+                            className={`py-4 rounded-xl text-sm font-black transition-all active:scale-95 ${
+                              isActionable ? "px-6 bg-slate-100 text-slate-500 hover:bg-red-50 hover:text-red-600" : "w-full bg-slate-100 text-slate-500 hover:bg-red-50 hover:text-red-600"
+                            }`}
+                          >
+                            Cancel Order
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })
@@ -798,7 +902,7 @@ const PrescriptionPage = () => {
                     sub_total: subTotal,
                     platform_fee: PLATFORM_FEE,
                     grand_total: grandTotal,
-                    status: "reviewed", // Stay in reviewed status until a courier is assigned and picks it up
+                    status: "paid", 
                     payment_status: "paid",
                     delivery_code: code,
                   })
