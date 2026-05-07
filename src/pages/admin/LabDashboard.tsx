@@ -451,7 +451,7 @@ const LabDashboard = () => {
     },
     retry: false,
   });
-  const bookings = (bookings_raw || []) as LabBooking[];
+  const bookings = (Array.isArray(bookings_raw) ? bookings_raw : []) as LabBooking[];
 
   // ── Fetch tests ─────────────────────────────────────────────────────────────
   const { data: testsList_raw, isLoading: isTestsLoading } = useQuery<LabTest[]>({
@@ -466,7 +466,7 @@ const LabDashboard = () => {
     },
     retry: false,
   });
-  const testsList = (testsList_raw || []) as LabTest[];
+  const testsList = (Array.isArray(testsList_raw) ? testsList_raw : []) as LabTest[];
   
   // ── Fetch logistics partners ────────────────────────────────────────────────
   const { data: logisticsPartners = [] } = useQuery<any[]>({
@@ -1233,6 +1233,7 @@ const LabDashboard = () => {
                   if (revenueFilter === "custom" && customFrom && customTo) return d >= new Date(customFrom) && d <= new Date(customTo);
                   return true;
                 };
+
                 const completedInRange = bookings.filter(b => b.status === "completed" && inRange(b.collection_date));
                 const totalRevenue = completedInRange.reduce((s, b) => s + (b.total_amount || 0), 0);
                 const allRevenue = bookings.filter(b => b.status !== "cancelled").reduce((s, b) => s + (b.total_amount || 0), 0);

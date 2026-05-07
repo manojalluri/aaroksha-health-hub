@@ -133,32 +133,29 @@ const LogisticsDashboard = () => {
 
   // ─── Earnings Data ──────────────────────────────────────────────────────────
   const earnings = useMemo(() => {
-    const completedRx = (partner?.category === 'pharmacy' || !partner?.category) ? prescriptions.filter(p => p.status === 'completed') : [];
-    const completedLab = (partner?.category === 'lab' || !partner?.category) ? labBookings.filter(l => l.status === 'completed') : [];
-    const rxRev = completedRx.reduce((sum, p) => sum + (p.delivery_fee || 40), 0);
-    const labRev = completedLab.reduce((sum, l) => sum + (l.delivery_fee || 49), 0);
-    const total = rxRev + labRev;
+    const pRx = Array.isArray(prescriptions) ? prescriptions : [];
+    const pLab = Array.isArray(labBookings) ? labBookings : [];
 
-    // Platform share logic (Logistics often has fixed fee per delivery OR percentage)
-    const commRate = partner?.commission_rate || 30; // default 30%
-    const commType = partner?.commission_type || "percentage";
-    const platformShare = commType === "percentage" ? (total * commRate) / 100 : (completedRx.length + completedLab.length) * commRate;
+    const completedRx = (partner?.category === 'pharmacy' || !partner?.category) 
+      ? pRx.filter(p => p.status === 'completed') 
+      : [];
+    const completedLab = (partner?.category === 'lab' || !partner?.category) 
+      ? pLab.filter(l => l.status === 'collected' || l.status === 'completed') 
+      : [];
 
-    const pendingRx = prescriptions.filter(p => p.status !== 'completed').length;
-    const pendingLab = labBookings.filter(l => l.status !== 'completed').length;
+    const pendingRx = pRx.filter(p => p.status !== 'completed').length;
+    const pendingLab = pLab.filter(l => l.status !== 'completed').length;
 
     return {
-      total,
+      total: (completedRx.length * 50) + (completedLab.length * 40),
       count: completedRx.length + completedLab.length,
-      pendingCount: pendingRx + pendingLab,
       rxCount: completedRx.length,
       labCount: completedLab.length,
-      rx: rxRev,
-      lab: labRev,
-      platformShare,
-      netPayable: total - platformShare
+      pendingCount: pendingRx + pendingLab,
+      rxPending: pendingRx,
+      labPending: pendingLab
     };
-  }, [prescriptions, labBookings, partner]);
+  }, [partner, prescriptions, labBookings]);
 
   // ─── Update order status ──────────────────────────────────────────
 
@@ -207,12 +204,12 @@ const LogisticsDashboard = () => {
     navigate("/admin/login/logistics");
   };
 
-  const filteredRx = prescriptions.filter(o => 
+  const filteredRx = (Array.isArray(prescriptions) ? prescriptions : []).filter(o => 
     (o.patient_name || "").toLowerCase().includes(search.toLowerCase()) ||
     (o.order_id || o.id).toLowerCase().includes(search.toLowerCase())
   );
 
-  const filteredLab = labBookings.filter(o => 
+  const filteredLab = (Array.isArray(labBookings) ? labBookings : []).filter(o => 
     (o.patient_name || "").toLowerCase().includes(search.toLowerCase()) ||
     (o.order_id || o.id).toLowerCase().includes(search.toLowerCase())
   );
@@ -364,8 +361,8 @@ const LogisticsDashboard = () => {
                          </TableRow>
                       </TableHeader>
                       <TableBody>
-                         {[...prescriptions, ...labBookings]
-                           .filter(p => p.status === 'completed')
+                         {([...(Array.isArray(prescriptions) ? prescriptions : []), ...(Array.isArray(labBookings) ? labBookings : [])])
+                           .filter(p => p.status === 'completed' || p.status === 'collected')
                            .filter(p => {
                              const date = new Date(p.created_at);
                              const now = new Date();
@@ -374,12 +371,10 @@ const LogisticsDashboard = () => {
                                const y = new Date(); y.setDate(now.getDate() - 1);
                                return date.toDateString() === y.toDateString();
                              }
-                             if (historyFilter === 'month') {
-                               const m = new Date(); m.setMonth(now.getMonth() - 1);
-                               return date >= m;
-                             }
+                             if (historyFilter === 'month') return date.getMonth() === now.getMonth();
                              return true;
                            })
+                           .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                            .slice(0, 50)
                            .map(p => (
                             <TableRow key={p.id} className="hover:bg-slate-50/50 transition-colors">
@@ -400,13 +395,13 @@ const LogisticsDashboard = () => {
                                </TableCell>
                             </TableRow>
                          ))}
-                         {([...prescriptions, ...labBookings].filter(p => p.status === 'completed').length === 0) && (
+                         {([...(Array.isArray(prescriptions) ? prescriptions : []), ...(Array.isArray(labBookings) ? labBookings : [])].filter(p => p.status === 'completed' || p.status === 'collected').length === 0) && (
                            <TableRow>
                              <TableCell colSpan={5} className="py-20 text-center">
                                <div className="h-16 w-16 bg-slate-50 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-slate-100">
                                  <ClipboardList className="h-8 w-8 text-slate-300" />
                                </div>
-                               <p className="font-black text-slate-400 text-sm">No delivery history found</p>
+                               <p className="font-black text-slate-400 text-sm">No job history found</p>
                              </TableCell>
                            </TableRow>
                          )}
