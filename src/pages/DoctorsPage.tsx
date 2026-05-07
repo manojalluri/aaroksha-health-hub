@@ -158,8 +158,8 @@ const DoctorsPage = () => {
             <p className="text-sm text-slate-400 mt-1">Try a different specialty or name</p>
           </div>
         ) : (
-          filtered.map((doctor: any, idx: number) => {
-            const color = avatarColors[idx % avatarColors.length];
+          filtered.map((doctor: any) => {
+            const color = "#2563eb";
             const initial = doctor.name?.replace("Dr. ", "").charAt(0) || "D";
             return (
               <div
@@ -223,6 +223,10 @@ const DoctorsPage = () => {
                   </div>
                   <button
                     onClick={() => {
+                      if (!doctor.available) {
+                        toast.error("This doctor is currently unavailable for bookings");
+                        return;
+                      }
                       if (!user) {
                         toast.error("Please login to book appointments");
                         navigate("/auth");
@@ -230,10 +234,10 @@ const DoctorsPage = () => {
                       }
                       navigate(`/book-appointment/${doctor.id}`);
                     }}
-                    className="px-5 py-2.5 rounded-xl text-xs font-black text-white transition-all active:scale-95 shadow-md"
-                    style={{ backgroundColor: color, boxShadow: `0 4px 12px ${color}40` }}
+                    className={`px-5 py-2.5 rounded-xl text-xs font-black text-white transition-all active:scale-95 shadow-md ${!doctor.available ? "opacity-50 cursor-not-allowed" : ""}`}
+                    style={{ backgroundColor: doctor.available ? color : "#94a3b8", boxShadow: doctor.available ? `0 4px 12px ${color}40` : "none" }}
                   >
-                    Book Now →
+                    {doctor.available ? "Book Now →" : "Unavailable"}
                   </button>
                 </div>
               </div>

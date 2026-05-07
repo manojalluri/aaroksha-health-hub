@@ -72,12 +72,7 @@ const HospitalLogin = () => {
 
         {/* Logo */}
         <div className="flex flex-col items-center mb-10">
-          <div className="relative mb-6">
-            <div className="h-20 w-20 bg-blue-600 rounded-3xl flex items-center justify-center shadow-2xl shadow-blue-900/60 border border-blue-400/30">
-              <Stethoscope className="h-10 w-10 text-white" />
-            </div>
-            <span className="absolute -top-1 -right-1 h-5 w-5 bg-emerald-400 rounded-full border-2 border-slate-900 animate-pulse" />
-          </div>
+
           <h1 className="text-3xl font-black text-white tracking-tight">Hospital Portal</h1>
           <p className="text-blue-300 text-[11px] font-bold uppercase tracking-[0.2em] mt-2">Aaroksha Health · Hospital Admin</p>
         </div>

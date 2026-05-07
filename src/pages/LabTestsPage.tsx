@@ -53,7 +53,7 @@ const LabTestsPage = () => {
   const genOrderId = (prefix: string) => {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     const code = Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-    return `${prefix}-${code}`;
+    return prefix ? `${prefix}-${code}` : code;
   };
 
   useEffect(() => {
@@ -70,6 +70,20 @@ const LabTestsPage = () => {
       return (data || []) as LabTest[];
     },
   });
+
+  const { data: labPartner } = useQuery({
+    queryKey: ["lab-partner-settings"],
+    queryFn: async () => {
+      // Fetch the first lab partner to get global scheduling settings
+      const { data } = await supabase.from("partners").select("*").eq("type", "lab").eq("status", "active").limit(1).single();
+      return data;
+    }
+  });
+
+  const scheduling = labPartner?.settings?.scheduling;
+  const bookingWindow = scheduling?.window || 7;
+  const availableSlots = scheduling?.slots || ["07:00 AM", "08:00 AM", "09:00 AM", "10:00 AM", "11:00 AM", "02:00 PM", "03:00 PM"];
+  const holidays = scheduling?.holidays || [];
 
   const categories = ["All", ...Array.from(new Set(labTests.map((t) => t.category)))];
   const filtered = labTests.filter(
@@ -91,14 +105,15 @@ const LabTestsPage = () => {
   const testTotal = cart.reduce((sum, c) => sum + c.test.price * c.quantity, 0);
   const total = testTotal + (cart.length > 0 ? PLATFORM_FEE : 0);
 
-  const dates = Array.from({ length: 7 }, (_, i) => {
+  const dates = Array.from({ length: bookingWindow }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() + i + 1);
     return d.toISOString().split("T")[0];
-  });
+  }).filter(date => !holidays.includes(date));
+
   const formatDate = (d: string) =>
     d ? new Date(d).toLocaleDateString("en-IN", { weekday: "short", month: "short", day: "numeric" }) : "";
-  const times = ["07:00 AM", "08:00 AM", "09:00 AM", "10:00 AM", "11:00 AM", "02:00 PM", "03:00 PM"];
+  const times = availableSlots;
 
   const handlePayment = async () => {
     if (!user) {
@@ -118,6 +133,7 @@ const LabTestsPage = () => {
         patient_phone: patient.phone,
         patient_age: patient.age,
         patient_address: patient.address,
+        patient_gender: patient.gender,
         tests: cart.map((i) => ({ id: i.test.id, name: i.test.name, price: i.test.price })),
         platform_fee: PLATFORM_FEE,
         total_amount: total,
@@ -132,14 +148,13 @@ const LabTestsPage = () => {
         throw error;
       }
 
-      // 2. Mock payment hand-off logic for PhonePe
-      toast.loading("Communicating with PhonePe Secure Gateway...", { duration: 2500 });
-      await new Promise(r => setTimeout(r, 2500));
+      // 2. Successful payment callback update
 
       // 3. Successful payment callback update
+      const collectionCode = genOrderId(""); // 6 char alphanumeric code
       const { error: updateError } = await supabase
         .from("lab_bookings")
-        .update({ payment_status: "paid", status: "scheduled" })
+        .update({ payment_status: "paid", status: "confirmed", collection_code: collectionCode })
         .eq("id", booking.id);
 
       if (updateError) throw updateError;
@@ -148,7 +163,7 @@ const LabTestsPage = () => {
       setStep("confirmed");
     } catch (err) {
       console.error(err);
-      toast.error("Transaction failed: " + (err instanceof Error ? err.message : "Unknown error"));
+      toast.error("Transaction failed: " + (err?.message || "Unknown error"));
     } finally {
       setIsSubmitting(false);
     }
@@ -204,7 +219,7 @@ const LabTestsPage = () => {
             <button
               onClick={() => setShowCart(!showCart)}
               className="relative h-9 w-9 rounded-xl flex items-center justify-center"
-              style={{ backgroundColor: cart.length > 0 ? "#7c3aed" : "#f3f4f6" }}
+              style={{ backgroundColor: cart.length > 0 ? "#2563eb" : "#f3f4f6" }}
             >
               <ShoppingCart className={`h-4 w-4 ${cart.length > 0 ? "text-white" : "text-slate-500"}`} />
               {cart.length > 0 && (
@@ -226,7 +241,7 @@ const LabTestsPage = () => {
                   placeholder="Search tests, packages..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="w-full h-11 rounded-2xl bg-slate-50 border border-slate-200 pl-11 pr-4 text-sm text-slate-700 placeholder:text-slate-400 outline-none focus:border-purple-300 focus:ring-2 focus:ring-purple-100 transition-all"
+                  className="w-full h-11 rounded-2xl bg-slate-50 border border-slate-200 pl-11 pr-4 text-sm text-slate-700 placeholder:text-slate-400 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition-all"
                 />
               </div>
             </div>
@@ -282,7 +297,7 @@ const LabTestsPage = () => {
               <div className="px-4 py-3 bg-slate-50">
                 <button
                   onClick={() => { setStep("details"); setShowCart(false); }}
-                  className="w-full rounded-xl bg-purple-600 py-3 text-sm font-black text-white flex items-center justify-center gap-2 shadow-lg shadow-purple-200"
+                  className="w-full rounded-xl bg-blue-600 py-3 text-sm font-black text-white flex items-center justify-center gap-2 shadow-lg shadow-blue-200"
                 >
                   Proceed to Book <ChevronRight className="h-4 w-4" />
                 </button>
@@ -354,8 +369,31 @@ const LabTestsPage = () => {
               <div className="h-8 w-8 rounded-xl bg-purple-100 flex items-center justify-center">
                 <MapPin className="h-4 w-4 text-purple-600" />
               </div>
-              <p className="font-black text-slate-800 text-sm">Patient & Delivery</p>
+              <p className="font-black text-slate-800 text-sm">Patient &amp; Delivery</p>
             </div>
+            {(() => {
+              const sp = (() => { try { return JSON.parse(localStorage.getItem("aaroksha_profile") || "{}"); } catch { return {}; } })();
+              if (!sp.name || !sp.phone) return null;
+              const savedAddr = [sp.address, sp.town, sp.pincode].filter(Boolean).join(", ");
+              const isUsing = patient.name === sp.name && patient.phone === sp.phone;
+              return (
+                <div className={`rounded-2xl border-2 p-3 mb-3 transition-all ${isUsing ? "bg-purple-50 border-purple-300" : "bg-slate-50 border-slate-200"}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className={`text-xs font-black ${isUsing ? "text-purple-800" : "text-slate-600"}`}>{sp.name} · {sp.phone}</p>
+                      {savedAddr && <p className={`text-[10px] font-medium mt-0.5 ${isUsing ? "text-purple-500" : "text-slate-400"}`}>{savedAddr}</p>}
+                    </div>
+                    {isUsing ? (
+                      <button type="button" onClick={() => setPatient({ ...patient, name: "", phone: "", address: "" })}
+                        className="text-[10px] font-black text-slate-400 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shrink-0">Change</button>
+                    ) : (
+                      <button type="button" onClick={() => setPatient({ ...patient, name: sp.name, phone: sp.phone, address: savedAddr || patient.address })}
+                        className="text-[10px] font-black text-purple-700 bg-purple-100 border border-purple-200 px-3 py-1.5 rounded-xl shrink-0 hover:bg-purple-200 transition-all">Use Saved ✓</button>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
             <div className="space-y-3">
               {[
                 { label: "Full Name *", key: "name", placeholder: "Patient's full name", type: "text" },
@@ -373,12 +411,32 @@ const LabTestsPage = () => {
                   />
                 </div>
               ))}
+              
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Gender *</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {["Male", "Female", "Other"].map((g) => (
+                    <button
+                      key={g}
+                      onClick={() => setPatient({ ...patient, gender: g })}
+                      className="py-2.5 rounded-xl text-xs font-black border-2 transition-all active:scale-95"
+                      style={
+                        patient.gender === g
+                          ? { backgroundColor: "#2563eb", borderColor: "#2563eb", color: "white" }
+                          : { backgroundColor: "#f8fafc", borderColor: "#e2e8f0", color: "#64748b" }
+                      }
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Collection Address *</label>
                 <textarea
                   value={patient.address || ""}
                   onChange={(e) => setPatient({ ...patient, address: e.target.value })}
-                  placeholder="House/Flat No., Building Name&#10;Street, Area, Landmark&#10;City, Pincode"
+                  placeholder={"House/Flat No., Building Name\nStreet, Area, Landmark\nCity, Pincode"}
                   className="w-full h-24 rounded-xl bg-slate-50 border border-slate-200 p-3.5 text-sm text-slate-700 placeholder:text-slate-300 outline-none focus:border-purple-300 focus:ring-2 focus:ring-purple-100 transition-all resize-none"
                 />
               </div>
@@ -400,7 +458,7 @@ const LabTestsPage = () => {
                   onClick={() => setSelectedDate(d)}
                   className={`flex-shrink-0 w-16 py-3 rounded-2xl text-center border-2 transition-all ${
                     selectedDate === d
-                      ? "bg-purple-600 text-white border-purple-600 shadow-md shadow-purple-200"
+                      ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200"
                       : "bg-slate-50 text-slate-600 border-transparent"
                   }`}
                 >
@@ -418,7 +476,7 @@ const LabTestsPage = () => {
                     onClick={() => setSelectedTime(t)}
                     className={`py-2 rounded-xl text-[10px] font-black transition-all border ${
                       selectedTime === t
-                        ? "bg-purple-600 text-white border-purple-600 shadow-md"
+                        ? "bg-blue-600 text-white border-blue-600 shadow-md"
                         : "bg-slate-50 text-slate-500 border-slate-200"
                     }`}
                   >
@@ -437,7 +495,7 @@ const LabTestsPage = () => {
               }
               setStep("checkout");
             }}
-            className="w-full rounded-2xl bg-purple-600 py-4 text-sm font-black text-white shadow-xl shadow-purple-200 flex items-center justify-center gap-2 active:scale-[0.99] transition-all"
+            className="w-full rounded-2xl bg-blue-600 py-4 text-sm font-black text-white shadow-xl shadow-blue-200 flex items-center justify-center gap-2 active:scale-[0.99] transition-all"
           >
             Continue to Checkout <ChevronRight className="h-4 w-4" />
           </button>
@@ -480,13 +538,10 @@ const LabTestsPage = () => {
           <button
             onClick={handlePayment}
             disabled={isSubmitting}
-            className="w-full rounded-2xl bg-purple-600 py-4 text-sm font-black text-white shadow-xl shadow-purple-200 flex items-center justify-center gap-2 active:scale-[0.99] transition-all disabled:opacity-70"
+            className="w-full rounded-2xl bg-blue-600 py-4 text-sm font-black text-white shadow-xl shadow-blue-200 flex items-center justify-center gap-2 active:scale-[0.99] transition-all disabled:opacity-70"
           >
             {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <>Confirm & Pay ₹{total} →</>}
           </button>
-          <p className="text-center text-[10px] text-slate-300 font-black uppercase tracking-widest">
-            Money-back guarantee · 24hr reports
-          </p>
         </main>
       )}
 
@@ -516,7 +571,7 @@ const LabTestsPage = () => {
           </p>
           <button
             onClick={() => navigate("/")}
-            className="w-full max-w-xs rounded-2xl bg-purple-600 py-4 text-sm font-black text-white shadow-xl shadow-purple-200"
+            className="w-full max-w-xs rounded-2xl bg-blue-600 py-4 text-sm font-black text-white shadow-xl shadow-blue-200"
           >
             Back to Home
           </button>

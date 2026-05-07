@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { verifyPartnerSession, clearAdminSession, revokePartnerSession } from "@/lib/adminAuth";
+import { verifyPartnerSession, clearAdminSession, revokePartnerSession, getPartnerIdFromSession } from "@/lib/adminAuth";
 import {
   FlaskConical, Search, Plus, Edit, Trash2,
   Clock, MapPin, Loader2, Activity, TrendingUp,
@@ -8,7 +8,7 @@ import {
   CheckCircle, Users, Phone, ChevronDown, XCircle,
   Upload, FileText, MessageCircle, Send, AlertCircle,
   Calendar, ToggleLeft, ToggleRight, Save, UserCog, Stethoscope,
-  Download, FileSpreadsheet, Briefcase, LogOut
+  Download, FileSpreadsheet, Briefcase, LogOut, IndianRupee,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
@@ -17,9 +17,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface LabTest {
@@ -49,9 +52,14 @@ interface LabBooking {
   collection_time: string;
   technician?: string | null;
   total_amount: number;
+  platform_fee?: number; // Added by super admin - NOT shown to lab partner
   status: string;
   tests: LabTestItem[];
+  collection_code?: string;
+  created_at: string;
 }
+
+const formatBookingId = (b: any) => (b?.order_id || b?.id || "").slice(0, 8).toUpperCase();
 
 interface TechnicianSlot {
   id: string;
@@ -209,25 +217,40 @@ const LabDashboard = () => {
         clearAdminSession();
         navigate("/admin/login/lab");
       } else {
-        const customSession = localStorage.getItem("aaroksha_partner_session");
-        if (customSession) {
-          setPartnerId(JSON.parse(customSession).partner_id);
+      const realPartnerId = await getPartnerIdFromSession();
+      if (realPartnerId) {
+        const { data: p } = await supabase.from("partners").select("*").eq("partner_id", realPartnerId).single();
+        if (p) {
+          setPartner(p);
+          setPartnerId(p.partner_id);
         }
+      }
       }
       setIsVerifying(false);
     }
     checkAuth();
   }, [navigate]);
 
+  const [partner, setPartner] = useState<any>(null);
+
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"bookings" | "results" | "manage" | "technicians">("bookings");
+  const [activeTab, setActiveTab] = useState<"bookings" | "results" | "manage" | "technicians" | "scheduling" | "analytics" | "settlements">("bookings");
   const [search, setSearch] = useState("");
+
+  // ── Analytics State ──────────────────────────────────────────────────────
+  const [revenueFilter, setRevenueFilter] = useState<"today" | "7days" | "30days" | "custom">("30days");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+
+  // Local result status tracking (overlay on top of DB status)
+  const [resultStatuses, setResultStatuses] = useState<Record<string, "processing" | "testing" | "tested" | "report_sent">>({});
   const [statusFilter, setStatusFilter] = useState("All");
   const [selectedBooking, setSelectedBooking] = useState<LabBooking | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isEditTestOpen, setIsEditTestOpen] = useState(false);
   const [editingTest, setEditingTest] = useState<LabTest | null>(null);
   const [selectedTechnician, setSelectedTechnician] = useState("");
+  const [collectionCodeInput, setCollectionCodeInput] = useState("");
 
   // ── Results Upload / WhatsApp State ─────────────────────────────────────────
   const [isResultsOpen, setIsResultsOpen] = useState(false);
@@ -236,6 +259,8 @@ const LabDashboard = () => {
   const [whatsappNumber, setWhatsappNumber] = useState("");
   const [isSending, setIsSending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [settlementFilter, setSettlementFilter] = useState<"all" | "today" | "yesterday">("all");
 
   // ── Technician Slot Management State ────────────────────────────────────────
   const [technicians, setTechnicians] = useState<LabTechnician[]>(MOCK_TECHNICIANS as LabTechnician[]);
@@ -247,6 +272,56 @@ const LabDashboard = () => {
 
   const [isTechWorkOpen, setIsTechWorkOpen] = useState(false);
   const [selectedTechForWork, setSelectedTechForWork] = useState<LabTechnician | null>(null);
+
+  // ── Scheduling State ────────────────────────────────────────────────────────
+  const [bookingWindow, setBookingWindow] = useState(7);
+  const [selectedSlots, setSelectedSlots] = useState<string[]>(["09:00 AM", "10:00 AM", "11:00 AM", "02:00 PM", "03:00 PM", "04:00 PM"]);
+  const [holidays, setHolidays] = useState<string[]>([]);
+  const [holidayInput, setHolidayInput] = useState("");
+
+  useEffect(() => {
+    if (partner?.settings?.scheduling) {
+      const s = partner.settings.scheduling;
+      if (s.window) setBookingWindow(s.window);
+      if (s.slots) setSelectedSlots(s.slots);
+      if (s.holidays) setHolidays(s.holidays);
+    }
+  }, [partner]);
+
+  const saveSchedulingMutation = useMutation({
+    mutationFn: async () => {
+      const pId = partner?.partner_id || user?.user_metadata?.partner_id;
+      if (!pId) throw new Error("No partner ID found");
+      
+      const newSettings = {
+        ...(partner?.settings || {}),
+        scheduling: {
+          window: bookingWindow,
+          slots: selectedSlots,
+          holidays: holidays
+        }
+      };
+
+      const { error } = await supabase.from("partners").update({ settings: newSettings }).eq("partner_id", pId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Scheduling settings updated successfully");
+      queryClient.invalidateQueries({ queryKey: ["partner-session"] });
+    },
+    onError: (err: any) => {
+      toast.error("Failed to save scheduling: " + err.message);
+    }
+  });
+
+  const allTimeSlots = [
+    "08:00 AM", "08:30 AM", "09:00 AM", "09:30 AM",
+    "10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM",
+    "12:00 PM", "12:30 PM", "01:00 PM", "01:30 PM",
+    "02:00 PM", "02:30 PM", "03:00 PM", "03:30 PM",
+    "04:00 PM", "04:30 PM", "05:00 PM", "05:30 PM",
+    "06:00 PM", "06:30 PM", "07:00 PM", "07:30 PM"
+  ];
 
   const openTechWork = (tech: LabTechnician) => {
     setSelectedTechForWork(tech);
@@ -342,6 +417,15 @@ const LabDashboard = () => {
     t.specialization.toLowerCase().includes(techSearch.toLowerCase())
   );
 
+  // ── Fetch Platform Settings ─────────────────────────────────────────────
+  const { data: settings } = useQuery({
+    queryKey: ["platform-settings"],
+    queryFn: async () => {
+      const { data } = await supabase.from("platform_settings").select("*").eq("id", "global").single();
+      return data;
+    }
+  });
+
   // ── Fetch bookings ──────────────────────────────────────────────────────────
   const { data: bookings_raw, isLoading: isBookingsLoading } = useQuery<LabBooking[]>({
     queryKey: ["admin-lab-bookings"],
@@ -349,9 +433,10 @@ const LabDashboard = () => {
       const { data: { user } } = await supabase.auth.getUser();
       let pId = user?.user_metadata?.partner_id;
 
+      // Also try from sessionStorage (set by createPartnerSession)
       if (!pId) {
-        const customSession = localStorage.getItem("aaroksha_partner_session");
-        if (customSession) pId = JSON.parse(customSession).partner_id;
+        const token = sessionStorage.getItem("aaroksha_admin_token");
+        if (token && partnerId) pId = partnerId;
       }
       
       let query = supabase.from("lab_bookings").select("*").order("created_at", { ascending: false });
@@ -382,6 +467,21 @@ const LabDashboard = () => {
     retry: false,
   });
   const testsList = (testsList_raw || []) as LabTest[];
+  
+  // ── Fetch logistics partners ────────────────────────────────────────────────
+  const { data: logisticsPartners = [] } = useQuery<any[]>({
+    queryKey: ["logistics-partners"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("partners")
+        .select("*")
+        .eq("type", "logistics")
+        .eq("category", "lab")
+        .eq("status", "active");
+      if (error) throw error;
+      return data || [];
+    },
+  });
 
   // ── Mutations ───────────────────────────────────────────────────────────────
   const updateBookingMutation = useMutation({
@@ -398,7 +498,10 @@ const LabDashboard = () => {
       toast.success("Booking updated successfully");
       setIsDetailsOpen(false);
     },
-    onError: () => toast.error("Failed to update booking"),
+    onError: (err: any) => {
+      console.error("Booking Update Error:", err);
+      toast.error("Failed to update booking: " + (err.message || "Unknown error"));
+    },
   });
 
   const saveTestMutation = useMutation({
@@ -481,9 +584,10 @@ const LabDashboard = () => {
     },
     {
       label: "Revenue",
+      // Show only tests subtotal - excludes the platform collection fee added by super admin
       val: "₹" + bookings
         .filter((b) => b.status !== "cancelled")
-        .reduce((sum, b) => sum + (b.total_amount || 0), 0)
+        .reduce((sum, b) => sum + Math.max(0, (b.total_amount || 0) - (b.platform_fee || Number(settings?.lab_fee || 39))), 0)
         .toLocaleString("en-IN"),
       icon: TrendingUp,
       iconBg: "bg-blue-50",
@@ -491,15 +595,24 @@ const LabDashboard = () => {
     },
   ];
 
+  const settlementData = useMemo(() => {
+    const billable = bookings.filter(b => b.status === "completed");
+    // Use tests subtotal only (total_amount minus the platform fee added by super admin)
+    const total = billable.reduce((s, b) => s + Math.max(0, (b.total_amount || 0) - (b.platform_fee || Number(settings?.lab_fee || 39))), 0);
+    const commRate = partner?.commission_rate || 18;
+    const platformCommission = (total * commRate) / 100;
+    return { total, count: billable.length, platformCommission, netEarnings: total - platformCommission };
+  }, [bookings, partner]);
+
   // ── Filtered bookings ───────────────────────────────────────────────────────
   const filteredBookings = bookings.filter((b) => {
     const q = search.toLowerCase();
     const matchesSearch =
-      b.patient_name.toLowerCase().includes(q) ||
-      b.id.toLowerCase().includes(q);
+      (b.patient_name || "").toLowerCase().includes(q) ||
+      (b.id || "").toLowerCase().includes(q);
     const matchesStatus =
       statusFilter === "All" ||
-      b.status.toLowerCase() === statusFilter.toLowerCase();
+      (b.status || "").toLowerCase() === (statusFilter || "").toLowerCase();
     return matchesSearch && matchesStatus;
   });
 
@@ -542,8 +655,8 @@ const LabDashboard = () => {
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 bg-blue-50 rounded-xl flex items-center justify-center border border-blue-100 shadow-sm">
-            <FlaskConical className="h-5 w-5 text-blue-600" />
+          <div className="h-12 w-12 overflow-hidden shrink-0">
+            <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
           </div>
           <div>
             <h1 className="text-xl font-extrabold text-slate-900 leading-none">
@@ -595,12 +708,12 @@ const LabDashboard = () => {
         {/* ── Tab Bar ──────────────────────────────────────────────────────── */}
         <div className="bg-white rounded-2xl border border-white shadow-sm overflow-hidden">
           {/* Tabs */}
-          <div className="flex items-center border-b border-slate-100 px-2 pt-2">
-            {(["bookings", "results", "manage", "technicians"] as const).map((tab) => (
+          <div className="flex items-center border-b border-slate-100 px-2 pt-2 flex-wrap gap-0.5">
+            {(["bookings", "results", "manage", "technicians", "scheduling", "analytics", "settlements"] as const).map((tab) => (
               <button
                 key={tab}
-                onClick={() => { setActiveTab(tab as "bookings" | "results" | "manage" | "technicians"); setSearch(""); setStatusFilter("All"); }}
-                className={`px-5 py-2.5 text-sm font-semibold rounded-t-xl transition-all relative ${
+                onClick={() => { setActiveTab(tab as any); setSearch(""); setStatusFilter("All"); }}
+                className={`px-4 py-2.5 text-sm font-semibold rounded-t-xl transition-all relative ${
                   activeTab === tab
                     ? "text-slate-800 bg-white border border-b-white border-slate-200 -mb-px z-10"
                     : "text-slate-400 hover:text-slate-600"
@@ -609,7 +722,10 @@ const LabDashboard = () => {
                 {tab === "bookings" ? "Bookings"
                   : tab === "results" ? "Results Entry"
                   : tab === "manage" ? "Manage Tests"
-                  : "Technicians"}
+                  : tab === "technicians" ? "Technicians"
+                  : tab === "scheduling" ? "Scheduling"
+                  : tab === "settlements" ? "Settlements & Payouts"
+                  : "Analytics"}
               </button>
             ))}
           </div>
@@ -708,16 +824,18 @@ const LabDashboard = () => {
                             )}
                           </td>
                           <td className="py-4 text-sm font-bold text-slate-800">
-                            ₹{b.total_amount?.toLocaleString("en-IN")}
+                            {/* Show tests subtotal only - platform fee is Aaroksha's revenue, not the lab's */}
+                            ₹{Math.max(0, (b.total_amount || 0) - (b.platform_fee || 39)).toLocaleString("en-IN")}
                           </td>
                           <td className="py-4">
-                            <StatusBadge status={b.status} />
+                            <StatusBadge status={b.status || "pending"} />
                           </td>
                           <td className="py-4 pr-6 text-right">
                             <button
                               onClick={() => {
                                 setSelectedBooking(b);
                                 setSelectedTechnician(b.technician || "");
+                                setCollectionCodeInput("");
                                 setIsDetailsOpen(true);
                               }}
                               className="h-8 w-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-all ml-auto"
@@ -737,76 +855,116 @@ const LabDashboard = () => {
           {/* ── Results Entry Tab ─────────────────────────────────────────── */}
           {activeTab === "results" && (
             <div className="p-6">
-              <div className="flex items-center gap-2.5 mb-6">
-                <ClipboardList className="h-5 w-5 text-blue-600" />
-                <h2 className="text-lg font-bold text-slate-800">Results Entry</h2>
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2.5">
+                  <ClipboardList className="h-5 w-5 text-blue-600" />
+                  <h2 className="text-lg font-bold text-slate-800">Results Entry & Dispatch</h2>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  <span className="w-2 h-2 rounded-full bg-purple-400"></span> Processing
+                  <span className="w-2 h-2 rounded-full bg-blue-400 ml-2"></span> Testing
+                  <span className="w-2 h-2 rounded-full bg-amber-400 ml-2"></span> Tested
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 ml-2"></span> Report Sent
+                </div>
               </div>
               <div className="space-y-3">
                 {bookings
-                  .filter((b) => b.status === "processing" || b.status === "completed")
-                  .map((b) => (
-                    <div
-                      key={b.id}
-                      className="border border-slate-200 rounded-2xl p-5 flex items-center justify-between hover:border-blue-200 hover:shadow-sm transition-all bg-white"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div>
-                          <p className="text-[11px] font-bold text-blue-600 uppercase tracking-wider mb-0.5">
-                            {formatBookingId(b)}
-                          </p>
-                          <h4 className="text-base font-bold text-slate-800 leading-none mb-0.5">
-                            {b.patient_name}
-                          </h4>
-                          <p className="text-xs text-slate-400 font-medium">
-                            {Array.isArray(b.tests) && b.tests.length > 0
-                              ? b.tests[0].name
-                              : "Diagnostic Panel"}
-                          </p>
+                  .filter((b) => ["processing", "collected", "completed"].includes(b.status))
+                  .map((b) => {
+                    const localStatus = resultStatuses[b.id] || (b.status === "completed" ? "tested" : "processing");
+                    const statusCfg: Record<string, { label: string; cls: string }> = {
+                      processing: { label: "Processing", cls: "bg-purple-100 text-purple-700 border-purple-200" },
+                      testing: { label: "Testing", cls: "bg-blue-100 text-blue-700 border-blue-200" },
+                      tested: { label: "Tested", cls: "bg-amber-100 text-amber-700 border-amber-200" },
+                      report_sent: { label: "Report Sent", cls: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+                    };
+                    const sc = statusCfg[localStatus] || statusCfg.processing;
+                    return (
+                      <div
+                        key={b.id}
+                        className="border border-slate-200 rounded-2xl p-5 bg-white hover:border-blue-200 hover:shadow-sm transition-all"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-start gap-4">
+                            <div>
+                              <p className="text-[11px] font-bold text-blue-600 uppercase tracking-wider mb-0.5">
+                                {formatBookingId(b)}
+                              </p>
+                              <h4 className="text-base font-bold text-slate-800 leading-none mb-0.5">
+                                {b.patient_name}
+                              </h4>
+                              <p className="text-xs text-slate-400 font-medium">
+                                {Array.isArray(b.tests) && b.tests.length > 0 ? b.tests.map((t: any) => t.name).join(", ") : "Diagnostic Panel"}
+                              </p>
+                              <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+                                <Phone className="h-3 w-3" /> {b.patient_phone || "N/A"}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {/* Status pipeline */}
+                            <div className="flex items-center gap-1">
+                              {(["processing", "testing", "tested", "report_sent"] as const).map((s, i) => (
+                                <button
+                                  key={s}
+                                  onClick={() => {
+                                    if (s !== "report_sent") {
+                                      setResultStatuses(prev => ({ ...prev, [b.id]: s }));
+                                      if (s === "tested") { updateBookingMutation.mutate({ id: b.id, updates: { status: "completed" } }); }
+                                    }
+                                  }}
+                                  disabled={s === "report_sent"}
+                                  className={`px-2 py-1 rounded-md text-[10px] font-bold border transition-all ${
+                                    localStatus === s ? statusCfg[s].cls + " scale-105" : "bg-slate-50 text-slate-400 border-slate-200 hover:border-blue-300"
+                                  } ${s === "report_sent" ? "cursor-default opacity-50" : "cursor-pointer"}`}
+                                  title={`Mark as ${s}`}
+                                >
+                                  {statusCfg[s].label}
+                                </button>
+                              ))}
+                            </div>
+                            <span className="text-[11px] font-mono font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-lg">
+                              {b.id.slice(0, 3).toUpperCase()}-{b.collection_date?.slice(5, 7)}{b.collection_date?.slice(8, 10)}
+                            </span>
+                            {localStatus !== "report_sent" ? (
+                              <button
+                                onClick={() => {
+                                  setResultsBooking(b);
+                                  setWhatsappNumber(b.patient_phone?.replace(/\D/g, "").slice(-10) || "");
+                                  setPdfFile(null);
+                                  setIsResultsOpen(true);
+                                }}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold shadow-md shadow-blue-200 hover:bg-blue-700 transition-all active:scale-95"
+                              >
+                                <Upload className="h-3.5 w-3.5" /> Upload & Send
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setResultsBooking(b);
+                                  setWhatsappNumber(b.patient_phone?.replace(/\D/g, "").slice(-10) || "");
+                                  setPdfFile(null);
+                                  setIsResultsOpen(true);
+                                }}
+                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold hover:bg-emerald-100 transition-all"
+                              >
+                                <MessageCircle className="h-3.5 w-3.5" /> Resend Report
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4">
-                        <span className="text-[11px] font-mono font-bold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg">
-                          SMP-2026-{b.collection_date?.slice(5, 7)}{b.collection_date?.slice(8, 10)}-{b.id.slice(0, 3).toUpperCase().padStart(3, "0")}
-                        </span>
-                        <StatusBadge status={b.status} />
-                        {b.status === "completed" ? (
-                          <button
-                            onClick={() => {
-                              setResultsBooking(b);
-                              setWhatsappNumber(b.patient_phone || "");
-                              setPdfFile(null);
-                              setIsResultsOpen(true);
-                            }}
-                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold hover:bg-emerald-100 transition-all"
-                          >
-                            <MessageCircle className="h-3.5 w-3.5" /> Send Report
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => {
-                              setResultsBooking(b);
-                              setWhatsappNumber(b.patient_phone || "");
-                              setPdfFile(null);
-                              setIsResultsOpen(true);
-                            }}
-                            className="flex items-center gap-2 px-5 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold shadow-md shadow-blue-200 hover:bg-blue-700 transition-all active:scale-95"
-                          >
-                            <Upload className="h-3.5 w-3.5" />
-                            Upload & Send
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                {bookings.filter(
-                  (b) => b.status === "processing" || b.status === "completed"
-                ).length === 0 && (
-                  <div className="py-16 text-center text-slate-400 text-sm font-medium">
-                    No samples in processing or completed state
-                  </div>
-                )}
-              </div>
+                    );
+                  })}
+              {bookings.filter(
+                (b) => ["processing", "collected", "completed"].includes(b.status)
+              ).length === 0 && (
+                <div className="py-16 text-center text-slate-400 text-sm font-medium">
+                  No samples in processing or completed state
+                </div>
+              )}
             </div>
+          </div>
           )}
 
           {/* ── Manage Tests Tab ──────────────────────────────────────────── */}
@@ -1040,6 +1198,427 @@ const LabDashboard = () => {
               </div>
             </div>
           )}
+
+          {/* ── Analytics Tab ─────────────────────────────────────────────── */}
+          {activeTab === "analytics" && (
+            <div className="p-6 space-y-6">
+              {/* Revenue Filter */}
+              <div className="flex flex-wrap gap-2 items-center">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-2">Revenue Filter:</span>
+                {(["today", "7days", "30days", "custom"] as const).map(f => (
+                  <button key={f} onClick={() => setRevenueFilter(f)}
+                    className={`px-4 py-2 rounded-full text-xs font-bold border transition-all ${
+                      revenueFilter === f ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-100" : "bg-white text-slate-500 border-slate-200 hover:border-blue-300"
+                    }`}>
+                    {f === "today" ? "Today" : f === "7days" ? "Last 7 Days" : f === "30days" ? "Last 30 Days" : "Custom Range"}
+                  </button>
+                ))}
+                {revenueFilter === "custom" && (
+                  <div className="flex gap-2 items-center">
+                    <Input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} className="w-36 h-9 text-xs" />
+                    <span className="text-slate-400 text-xs">to</span>
+                    <Input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="w-36 h-9 text-xs" />
+                  </div>
+                )}
+              </div>
+
+              {/* Summary Cards */}
+              {(() => {
+                const today = new Date().toISOString().split("T")[0];
+                const inRange = (dateStr: string) => {
+                  const d = new Date((dateStr || "").split("T")[0]);
+                  if (revenueFilter === "today") return (dateStr || "").startsWith(today);
+                  if (revenueFilter === "7days") { const s = new Date(today); s.setDate(s.getDate() - 6); return d >= s; }
+                  if (revenueFilter === "30days") { const s = new Date(today); s.setDate(s.getDate() - 29); return d >= s; }
+                  if (revenueFilter === "custom" && customFrom && customTo) return d >= new Date(customFrom) && d <= new Date(customTo);
+                  return true;
+                };
+                const completedInRange = bookings.filter(b => b.status === "completed" && inRange(b.collection_date));
+                const totalRevenue = completedInRange.reduce((s, b) => s + (b.total_amount || 0), 0);
+                const allRevenue = bookings.filter(b => b.status !== "cancelled").reduce((s, b) => s + (b.total_amount || 0), 0);
+
+                // By status breakdown
+                const byStatus: Record<string, number> = {};
+                bookings.forEach(b => { byStatus[b.status] = (byStatus[b.status] || 0) + 1; });
+
+                return (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="bg-gradient-to-br from-blue-500 to-blue-700 rounded-2xl p-5 text-white shadow-lg shadow-blue-200">
+                        <p className="text-[11px] font-bold uppercase tracking-wider opacity-80">Revenue (Filtered)</p>
+                        <p className="text-3xl font-black mt-1">₹{totalRevenue.toLocaleString("en-IN")}</p>
+                        <p className="text-xs opacity-70 mt-2">{completedInRange.length} completed tests</p>
+                      </div>
+                      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total All-Time Revenue</p>
+                        <p className="text-2xl font-black text-slate-800 mt-1">₹{allRevenue.toLocaleString("en-IN")}</p>
+                        <p className="text-xs text-slate-400 mt-2">All non-cancelled bookings</p>
+                      </div>
+                      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Avg per Test</p>
+                        <p className="text-2xl font-black text-slate-800 mt-1">
+                          ₹{completedInRange.length > 0 ? Math.round(totalRevenue / completedInRange.length).toLocaleString("en-IN") : 0}
+                        </p>
+                        <p className="text-xs text-slate-400 mt-2">In selected period</p>
+                      </div>
+                    </div>
+
+                    {/* Booking Status Breakdown */}
+                    <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                      <div className="flex items-center gap-2 mb-4">
+                        <Activity className="h-5 w-5 text-blue-600" />
+                        <h3 className="font-bold text-slate-800">Booking Status Breakdown</h3>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+                        {Object.entries(byStatus).map(([status, count]) => {
+                          const cfg: Record<string, string> = {
+                            pending: "bg-amber-50 border-amber-200 text-amber-700",
+                            confirmed: "bg-blue-50 border-blue-200 text-blue-700",
+                            collected: "bg-violet-50 border-violet-200 text-violet-700",
+                            processing: "bg-purple-50 border-purple-200 text-purple-700",
+                            completed: "bg-emerald-50 border-emerald-200 text-emerald-700",
+                            cancelled: "bg-red-50 border-red-200 text-red-600",
+                          };
+                          return (
+                            <div key={status} className={`rounded-xl border p-3 text-center ${cfg[status] || "bg-slate-50 border-slate-200 text-slate-600"}`}>
+                              <p className="text-2xl font-black">{count}</p>
+                              <p className="text-[10px] font-bold uppercase tracking-wider capitalize mt-1">{status}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Tests ordered by revenue */}
+                    <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                      <div className="flex items-center gap-2 mb-4">
+                        <Beaker className="h-5 w-5 text-blue-600" />
+                        <h3 className="font-bold text-slate-800">Test Revenue Breakdown</h3>
+                      </div>
+                      {(() => {
+                        const testRevenue: Record<string, number> = {};
+                        completedInRange.forEach(b => {
+                          if (Array.isArray(b.tests)) {
+                            b.tests.forEach((t: any) => {
+                              testRevenue[t.name] = (testRevenue[t.name] || 0) + (t.price || 0);
+                            });
+                          }
+                        });
+                        const maxAmt = Math.max(...Object.values(testRevenue), 1);
+                        return Object.keys(testRevenue).length > 0 ? (
+                          <div className="space-y-3">
+                            {Object.entries(testRevenue).sort(([,a],[,b]) => b - a).map(([name, amount]) => (
+                              <div key={name} className="flex items-center gap-3">
+                                <p className="text-sm font-medium text-slate-700 w-52 truncate">{name}</p>
+                                <div className="flex-1 bg-slate-100 rounded-full h-2">
+                                  <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${(amount / maxAmt) * 100}%` }} />
+                                </div>
+                                <p className="text-sm font-bold text-slate-800 w-20 text-right">₹{amount.toLocaleString("en-IN")}</p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : <p className="text-sm text-slate-400 text-center py-6">No completed test data in range</p>;
+                      })()}
+                    </div>
+
+                    {/* Technician workload */}
+                    <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                      <div className="flex items-center gap-2 mb-4">
+                        <Users className="h-5 w-5 text-blue-600" />
+                        <h3 className="font-bold text-slate-800">Technician Workload</h3>
+                      </div>
+                      {(() => {
+                        const techCount: Record<string, number> = {};
+                        bookings.forEach(b => { if (b.technician) techCount[b.technician] = (techCount[b.technician] || 0) + 1; });
+                        const maxC = Math.max(...Object.values(techCount), 1);
+                        return Object.keys(techCount).length > 0 ? (
+                          <div className="space-y-3">
+                            {Object.entries(techCount).sort(([,a],[,b]) => b - a).map(([name, count]) => (
+                              <div key={name} className="flex items-center gap-3">
+                                <p className="text-sm font-medium text-slate-700 w-44">{name}</p>
+                                <div className="flex-1 bg-slate-100 rounded-full h-2">
+                                  <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${(count / maxC) * 100}%` }} />
+                                </div>
+                                <p className="text-sm font-bold text-slate-800 w-12 text-right">{count}</p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : <p className="text-sm text-slate-400 text-center py-6">No technician assignments yet</p>;
+                      })()}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* ── Settlements Tab ──────────────────────────────────────────────── */}
+          {activeTab === "settlements" && (
+            <div className="p-6 space-y-6">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Statement Summary */}
+                <div className="bg-slate-900 rounded-[2rem] p-8 text-white shadow-2xl relative overflow-hidden border border-white/5 flex flex-col justify-between">
+                  <div className="absolute top-0 right-0 p-8 opacity-10">
+                    <IndianRupee className="h-32 w-32" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-400 mb-2">Laboratory Net Settlement</p>
+                    <h2 className="text-5xl font-black mb-6">₹{(() => {
+                      const billable = bookings.filter(b => {
+                        if (b.status !== "completed") return false;
+                        if (settlementFilter === "today") return new Date(b.created_at).toDateString() === new Date().toDateString();
+                        if (settlementFilter === "yesterday") {
+                          const y = new Date(); y.setDate(y.getDate() - 1);
+                          return new Date(b.created_at).toDateString() === y.toDateString();
+                        }
+                        return true;
+                      });
+                      const total = billable.reduce((s, b) => s + (b.total_amount || 0), 0);
+                      const rate = partner?.commission_rate || 18;
+                      const comm = partner?.commission_type === "fixed"
+                        ? billable.length * rate
+                        : (total * rate) / 100;
+                      return (total - comm).toLocaleString("en-IN");
+                    })()}</h2>
+                  </div>
+                  
+                  <div className="space-y-4 pt-6 border-t border-white/10">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-400">Commission Rate</span>
+                      <span className="font-bold">{partner?.commission_rate || 18}% platform fee</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Info Card */}
+                <div className="space-y-4">
+                  <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
+                    <h3 className="font-black text-slate-900 flex items-center gap-2 mb-4">
+                      <TrendingUp className="h-5 w-5 text-emerald-500" /> Settlement Policy
+                    </h3>
+                    <ul className="space-y-3">
+                      {[
+                        { l: "Payout Cycle", v: partner?.settlement_cycle ? partner.settlement_cycle.charAt(0).toUpperCase() + partner.settlement_cycle.slice(1) : "Monthly" },
+                        { l: "Platform Rate", v: `${partner?.commission_rate || 18}% on Test Amount` },
+                        { l: "Payment Mode", v: "Direct Bank Transfer" },
+                        { l: "Next Settlement", v: (() => {
+                          const cycle = partner?.settlement_cycle || 'monthly';
+                          const d = new Date();
+                          if (cycle === 'today') return "By EOD Today";
+                          if (cycle === 'daily') return "Tomorrow Morning";
+                          if (cycle === 'weekly') {
+                            d.setDate(d.getDate() + (7 - d.getDay()) % 7 || 7);
+                            return d.toLocaleDateString();
+                          }
+                          return "1st of " + new Date(d.getFullYear(), d.getMonth() + 1, 1).toLocaleString('en-IN', { month: 'short' });
+                        })() }
+                      ].map(item => (
+                        <li key={item.l} className="flex justify-between items-center text-xs">
+                          <span className="text-slate-400 font-bold uppercase tracking-wider">{item.l}</span>
+                          <span className="font-black text-slate-700">{item.v}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Breakdown Table */}
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-50 flex items-center justify-between flex-wrap gap-4">
+                  <div className="flex items-center gap-4">
+                    <h3 className="font-black text-slate-900 text-sm italic underline decoration-blue-500 underline-offset-4">Settlement Breakdown</h3>
+                    <div className="flex bg-slate-100 p-1 rounded-xl">
+                      {(["all", "today", "yesterday"] as const).map(f => (
+                        <button key={f} onClick={() => setSettlementFilter(f)}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${settlementFilter === f ? "bg-white text-blue-600 shadow-sm" : "text-slate-400 hover:text-slate-600"}`}>
+                          {f}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader className="bg-slate-50">
+                        <TableRow>
+                          <TableHead className="text-[10px] font-black uppercase">Booking ID</TableHead>
+                          <TableHead className="text-[10px] font-black uppercase text-center">Gross Amount</TableHead>
+                          <TableHead className="text-[10px] font-black uppercase text-center text-red-500">Platform Comm</TableHead>
+                          <TableHead className="text-[10px] font-black uppercase text-right text-emerald-600">Merchant Net</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(() => {
+                          const filtered = bookings.filter(b => {
+                            if (b.status !== "completed") return false;
+                            if (settlementFilter === "today") return new Date(b.created_at).toDateString() === new Date().toDateString();
+                            if (settlementFilter === "yesterday") {
+                              const y = new Date(); y.setDate(y.getDate() - 1);
+                              return new Date(b.created_at).toDateString() === y.toDateString();
+                            }
+                            return true;
+                          });
+                          if (filtered.length === 0) return (
+                            <TableRow><TableCell colSpan={4} className="text-center py-8 text-slate-400 text-xs font-bold">
+                              No completed bookings for {settlementFilter === "all" ? "any period" : `"${settlementFilter}"`}
+                            </TableCell></TableRow>
+                          );
+                          return filtered.slice(0, 15).map(b => {
+                            const total = b.total_amount || 0;
+                            const rate = partner?.commission_rate || 18;
+                            const comm = partner?.commission_type === "fixed"
+                              ? rate
+                              : (total * rate) / 100;
+                            return (
+                              <TableRow key={b.id}>
+                                <TableCell className="font-mono text-[10px] font-bold text-slate-400">{b.order_id || b.id.slice(0,8).toUpperCase()}</TableCell>
+                                <TableCell className="text-center font-bold text-slate-700 text-xs">₹{total}</TableCell>
+                                <TableCell className="text-center font-bold text-red-500 text-xs">₹{comm.toFixed(2)}</TableCell>
+                                <TableCell className="text-right font-black text-slate-800 text-xs">₹{(total - comm).toFixed(2)}</TableCell>
+                              </TableRow>
+                            );
+                          });
+                        })()}
+                      </TableBody>
+                    </Table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Scheduling Tab ─────────────────────────────────────────────── */}
+          {activeTab === "scheduling" && (
+            <div className="p-8 max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+               <div className="flex items-center justify-between mb-8">
+                  <div>
+                    <h3 className="text-2xl font-black text-slate-800 tracking-tight italic">Sample Collection Scheduling</h3>
+                    <p className="text-slate-400 text-sm font-medium mt-1">Configure global availability for lab bookings</p>
+                  </div>
+                  <Button 
+                    onClick={() => saveSchedulingMutation.mutate()} 
+                    disabled={saveSchedulingMutation.isPending}
+                    className="h-12 px-8 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl shadow-lg shadow-blue-100 gap-2"
+                  >
+                    {saveSchedulingMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    Save Schedule Settings
+                  </Button>
+               </div>
+
+               <div className="space-y-6">
+                  {/* Advance Booking Window */}
+                  <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
+                      <Calendar className="h-24 w-24 text-blue-600" />
+                    </div>
+                    <div className="relative z-10">
+                      <h4 className="text-lg font-black text-slate-800 mb-1">Advance Booking Window</h4>
+                      <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-8">How many days ahead patients can book this lab</p>
+                      
+                      <div className="flex items-center gap-8">
+                        <div className="flex-1">
+                          <input 
+                            type="range" min="1" max="30" 
+                            value={bookingWindow}
+                            onChange={(e) => setBookingWindow(parseInt(e.target.value))}
+                            className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-blue-600" 
+                          />
+                          <div className="flex justify-between mt-3">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">1 Day (Same-day)</span>
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">30 Days (1 Month)</span>
+                          </div>
+                        </div>
+                        <div className="h-16 w-24 bg-blue-50 border-2 border-blue-100 rounded-2xl flex flex-col items-center justify-center shrink-0">
+                          <p className="text-xl font-black text-blue-600 leading-none">{bookingWindow}</p>
+                          <p className="text-[9px] font-black text-blue-400 uppercase mt-1">Days</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Available Time Slots */}
+                  <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                    <div className="flex items-center justify-between mb-6">
+                      <div>
+                        <h4 className="text-lg font-black text-slate-800 mb-1">Available Time Slots</h4>
+                        <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Select which time slots patients can see when booking ({selectedSlots.length} selected)</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => setSelectedSlots(allTimeSlots)} className="text-[10px] font-black text-blue-600 uppercase hover:underline">Select All</button>
+                        <span className="text-slate-200">|</span>
+                        <button onClick={() => setSelectedSlots([])} className="text-[10px] font-black text-slate-400 uppercase hover:underline">Clear All</button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+                      {allTimeSlots.map(slot => {
+                        const active = selectedSlots.includes(slot);
+                        return (
+                          <button
+                            key={slot}
+                            onClick={() => {
+                              if (active) setSelectedSlots(prev => prev.filter(s => s !== slot));
+                              else setSelectedSlots(prev => [...prev, slot]);
+                            }}
+                            className={`h-11 rounded-xl text-xs font-black transition-all border-2 ${
+                              active 
+                                ? "bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-100 scale-105" 
+                                : "bg-white border-slate-100 text-slate-400 hover:border-blue-200"
+                            }`}
+                          >
+                            {slot}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Holiday / Leave Dates */}
+                  <div className="bg-red-50/50 p-8 rounded-[2.5rem] border border-red-100 shadow-sm">
+                    <h4 className="text-lg font-black text-red-900 mb-1">Holiday / Leave Dates</h4>
+                    <p className="text-red-400 text-xs font-bold uppercase tracking-widest mb-6">Mark dates when the lab is not available for collections</p>
+                    
+                    <div className="flex gap-3 mb-6">
+                      <div className="relative flex-1">
+                        <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-red-300" />
+                        <input 
+                          type="date" 
+                          value={holidayInput}
+                          onChange={(e) => setHolidayInput(e.target.value)}
+                          className="w-full h-12 pl-11 pr-4 bg-white border border-red-100 rounded-2xl text-sm font-bold text-red-900 outline-none focus:border-red-400 transition-all" 
+                        />
+                      </div>
+                      <Button 
+                        variant="destructive"
+                        onClick={() => {
+                          if (holidayInput && !holidays.includes(holidayInput)) {
+                            setHolidays(prev => [...prev, holidayInput].sort());
+                            setHolidayInput("");
+                          }
+                        }}
+                        className="h-12 px-6 rounded-2xl font-black gap-2"
+                      >
+                        <Plus className="h-4 w-4" /> Add Holiday
+                      </Button>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {holidays.map(date => (
+                        <div key={date} className="flex items-center gap-2 bg-white border border-red-100 px-3 py-2 rounded-xl">
+                          <span className="text-xs font-black text-red-900">{new Date(date).toLocaleDateString("en-IN", { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                          <button onClick={() => setHolidays(prev => prev.filter(d => d !== date))} className="text-red-300 hover:text-red-500">
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                      {holidays.length === 0 && (
+                        <p className="text-red-300 text-xs font-black italic">No holidays set - Lab is available every day</p>
+                      )}
+                    </div>
+                  </div>
+               </div>
+            </div>
+          )}
         </div>
       </main>
 
@@ -1094,7 +1673,7 @@ const LabDashboard = () => {
                     <p className="text-sm font-bold text-slate-800">
                       {selectedBooking
                         ? formatDate(selectedBooking.collection_date, selectedBooking.collection_time)
-                        : "—"}
+                        : "-"}
                     </p>
                   </div>
                   <div className="text-right">
@@ -1130,52 +1709,143 @@ const LabDashboard = () => {
               </div>
 
               {/* Assign technician */}
-              <div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">
-                  Assign Technician
-                </p>
-                <div className="relative">
-                  <select
-                    value={selectedTechnician}
-                    onChange={(e) => setSelectedTechnician(e.target.value)}
-                    className="w-full h-11 bg-white border-2 border-blue-500 rounded-xl px-4 pr-10 text-sm font-medium text-slate-700 outline-none appearance-none cursor-pointer focus:ring-2 focus:ring-blue-200 transition-all"
-                  >
-                    <option value="">Select technician</option>
-                    <option>Technician Ravi</option>
-                    <option>Technician Priya</option>
-                    <option>Technician Anil</option>
-                  </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">
+                    Assign Technician
+                  </p>
+                  <div className="relative">
+                    <select
+                      value={selectedTechnician}
+                      onChange={(e) => setSelectedTechnician(e.target.value)}
+                      className="w-full h-11 bg-white border border-slate-200 rounded-xl px-4 pr-10 text-xs font-bold text-slate-700 outline-none appearance-none cursor-pointer focus:border-blue-400 transition-all"
+                    >
+                      <option value="">Select tech</option>
+                      <option>Technician Ravi</option>
+                      <option>Technician Priya</option>
+                      <option>Technician Anil</option>
+                    </select>
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">
+                    Logistics Partner
+                  </p>
+                  <div className="relative">
+                    <select
+                      value={selectedBooking?.logistics_partner_id || ""}
+                      onChange={(e) => {
+                        const lpId = e.target.value;
+                        updateBookingMutation.mutate({
+                          id: selectedBooking?.id,
+                          updates: { logistics_partner_id: lpId }
+                        });
+                      }}
+                      className="w-full h-11 bg-indigo-50 border border-indigo-100 rounded-xl px-4 pr-10 text-xs font-bold text-indigo-700 outline-none appearance-none cursor-pointer focus:border-indigo-400 transition-all"
+                    >
+                      <option value="">Select Partner</option>
+                        {logisticsPartners.map(lp => (
+                          <option key={lp.id} value={lp.partner_id}>{lp.name}</option>
+                        ))}
+                    </select>
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-3 w-3 text-indigo-400 pointer-events-none" />
+                  </div>
                 </div>
               </div>
 
               {/* Action buttons */}
-              <div className="grid grid-cols-2 gap-3 pt-1 pb-2">
-                <button
-                  onClick={() => setIsDetailsOpen(false)}
-                  className="h-11 rounded-xl bg-red-500 text-white font-bold text-sm flex items-center justify-center gap-2 hover:bg-red-600 transition-all active:scale-95"
-                >
-                  <XCircle className="h-4 w-4" /> Cancel
-                </button>
+              {selectedBooking?.collection_code && selectedBooking.status !== "collected" && selectedBooking.status !== "completed" && (
+                <div className="pt-2">
+                  <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">
+                    Verify Collection Code
+                  </Label>
+                  <Input 
+                    placeholder="Enter 6-digit code from patient" 
+                    value={collectionCodeInput}
+                    onChange={(e) => setCollectionCodeInput(e.target.value.toUpperCase())}
+                    className="h-11 border-2 border-violet-200 bg-violet-50 text-center font-black tracking-widest uppercase text-violet-800"
+                    maxLength={6}
+                  />
+                </div>
+              )}
+
+              <div className="space-y-3 pt-2">
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() =>
+                      updateBookingMutation.mutate({
+                        id: selectedBooking?.id,
+                        updates: {
+                          status: "confirmed",
+                          technician: selectedTechnician || selectedBooking?.technician,
+                        },
+                      })
+                    }
+                    disabled={updateBookingMutation.isPending || selectedBooking?.status !== 'pending'}
+                    className="h-11 rounded-xl bg-blue-600 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md shadow-blue-200 hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-60"
+                  >
+                    <UserCheck className="h-4 w-4" /> Confirm
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      if (selectedBooking?.collection_code && collectionCodeInput !== selectedBooking.collection_code) {
+                        toast.error("Invalid collection code. Ask the patient for the code shown in their profile.");
+                        return;
+                      }
+                      updateBookingMutation.mutate({
+                        id: selectedBooking?.id,
+                        updates: { status: "collected" },
+                      });
+                    }}
+                    disabled={updateBookingMutation.isPending || selectedBooking?.status !== 'confirmed'}
+                    className="h-11 rounded-xl bg-violet-600 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md shadow-violet-200 hover:bg-violet-700 transition-all active:scale-95 disabled:opacity-60"
+                  >
+                    <Activity className="h-4 w-4" /> Verify & Collected
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() =>
+                      updateBookingMutation.mutate({
+                        id: selectedBooking?.id,
+                        updates: { status: "processing" },
+                      })
+                    }
+                    disabled={updateBookingMutation.isPending || selectedBooking?.status !== 'collected'}
+                    className="h-11 rounded-xl bg-purple-600 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md shadow-purple-200 hover:bg-purple-700 transition-all active:scale-95 disabled:opacity-60"
+                  >
+                    <FlaskConical className="h-4 w-4" /> Processing
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      if (selectedBooking) {
+                        setIsDetailsOpen(false);
+                        setResultsBooking(selectedBooking);
+                        setIsResultsOpen(true);
+                      }
+                    }}
+                    disabled={selectedBooking?.status !== 'processing'}
+                    className="h-11 rounded-xl bg-emerald-600 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md shadow-emerald-200 hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-60"
+                  >
+                    <CheckCircle className="h-4 w-4" /> Complete
+                  </button>
+                </div>
+
                 <button
                   onClick={() =>
                     updateBookingMutation.mutate({
-                      id: selectedBooking.id,
-                      updates: {
-                        status: "confirmed",
-                        technician: selectedTechnician || selectedBooking.technician,
-                      },
+                      id: selectedBooking?.id,
+                      updates: { status: "cancelled" },
                     })
                   }
-                  disabled={updateBookingMutation.isPending}
-                  className="h-11 rounded-xl bg-blue-600 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md shadow-blue-200 hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-60"
+                  disabled={updateBookingMutation.isPending || selectedBooking?.status === 'cancelled'}
+                  className="w-full h-11 rounded-xl bg-slate-100 text-slate-500 font-bold text-sm flex items-center justify-center gap-2 hover:bg-red-50 hover:text-red-600 transition-all active:scale-95"
                 >
-                  {updateBookingMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <UserCheck className="h-4 w-4" />
-                  )}
-                  Assign & Confirm
+                  <XCircle className="h-4 w-4" /> Cancel Booking
                 </button>
               </div>
             </div>
@@ -1334,7 +2004,11 @@ const LabDashboard = () => {
                     window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
                     setIsSending(false);
                     setIsResultsOpen(false);
-                    toast.success(`Report details sent to +91 ${whatsappNumber} via WhatsApp`);
+                    // Mark result as sent in local state
+                    if (resultsBooking?.id) {
+                      setResultStatuses(prev => ({ ...prev, [resultsBooking.id]: "report_sent" }));
+                    }
+                    toast.success(`Report sent to +91 ${whatsappNumber} via WhatsApp ✅`);
                     setTimeout(() => {
                       toast.info("Please attach the PDF manually in the WhatsApp chat that just opened.", { duration: 6000 });
                     }, 1000);
@@ -1605,7 +2279,8 @@ const LabDashboard = () => {
                                 </div>
                               ))}
                               <div className="text-sm font-black text-blue-600 pt-1">
-                                Total: ₹{b.total_amount?.toLocaleString("en-IN")}
+                                {/* Tests subtotal only - excludes platform fee */}
+                                Tests Total: ₹{Math.max(0, (b.total_amount || 0) - (b.platform_fee || 39)).toLocaleString("en-IN")}
                               </div>
                             </div>
                           </div>

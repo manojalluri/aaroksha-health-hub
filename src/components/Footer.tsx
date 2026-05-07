@@ -5,7 +5,15 @@ const Footer = () => {
   return (
     <footer className="gradient-footer pt-16 pb-8">
       <div className="container mx-auto px-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-10 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-10 mb-12">
+          <div className="md:col-span-1">
+            <div className="flex items-center mb-4">
+              <img src="/logo.png" alt="Aaroksha" className="h-16 w-auto object-contain" />
+            </div>
+            <p className="text-sm text-muted-foreground mb-6 max-w-xs">
+              Premium Healthcare Platform – Book doctors, lab tests & medicines at your convenience.
+            </p>
+          </div>
           <div>
             <h3 className="text-base font-bold text-foreground mb-4">Popular Searches</h3>
             <ul className="space-y-2 text-sm text-muted-foreground">

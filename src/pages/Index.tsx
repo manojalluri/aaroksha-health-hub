@@ -16,6 +16,8 @@ const Index = () => {
   const location = useLocation();
   const { user } = useAuth();
   const [doctors, setDoctors] = useState<any[]>([]);
+  const [hospitals, setHospitals] = useState<any[]>([]);
+  const [viewDocsFor, setViewDocsFor] = useState<any | null>(null);
   const [activeBanner, setActiveBanner] = useState(0);
   const [search, setSearch] = useState("");
   const bannerRef = useRef<HTMLDivElement>(null);
@@ -79,6 +81,19 @@ const Index = () => {
     handleUpdate();
     window.addEventListener("doctors_updated", handleUpdate);
     
+    // Fetch Partner Hospitals
+    supabase.from("partners").select("*").eq("type", "hospital").then(({ data: ps }) => {
+      supabase.from("doctors").select("*").then(({ data: docs }) => {
+        if (ps && docs) {
+          const withCounts = ps.map(h => {
+             const docCount = docs.filter(d => d.partner_id === h.partner_id).length;
+             return { ...h, docCount };
+          }).filter(h => h.docCount > 2);
+          setHospitals(withCounts);
+        }
+      });
+    });
+
     const handleStorage = (e: StorageEvent) => {
       if (e.key === "aaroksha_doctors") handleUpdate();
     };
@@ -133,7 +148,7 @@ const Index = () => {
   const initial = (name: string) => name?.replace("Dr. ", "").charAt(0) || "D";
 
   // Avatar background colors cycling
-  const avatarColors = ["#2563eb", "#7c3aed", "#059669", "#dc2626"];
+  const avatarColors = ["#2563eb"];
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -143,9 +158,22 @@ const Index = () => {
       ───────────────────────────────────────── */}
       <nav className="hidden md:flex sticky top-0 z-50 bg-white border-b border-slate-100 shadow-sm">
         <div className="max-w-7xl mx-auto w-full px-8 py-4 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2.5">
-            <span className="text-lg font-black text-slate-800 tracking-tight uppercase">
+          <Link to="/" className="flex flex-col justify-center gap-0.5">
+            <span
+              className="font-black tracking-tight leading-none uppercase"
+              style={{
+                fontSize: "26px",
+                background: "linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #0ea5e9 100%)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                backgroundClip: "text",
+                letterSpacing: "-0.03em",
+              }}
+            >
               {settings.platform_name || "AAROKSHA"}
+            </span>
+            <span className="text-[11px] text-slate-400 font-semibold flex items-center gap-1">
+              <MapPin className="h-3 w-3 text-blue-500" /> Bhimavaram, India
             </span>
           </Link>
           <div className="flex items-center gap-8">
@@ -173,37 +201,6 @@ const Index = () => {
         </div>
       </nav>
 
-      {/* ─────────────────────────────────────────
-          DESKTOP HERO (md and above)
-      ───────────────────────────────────────── */}
-      <section
-        className="hidden md:block relative overflow-hidden"
-        style={{ background: "linear-gradient(135deg, #1e3a8a 0%, #2563eb 60%, #38bdf8 100%)" }}
-      >
-        <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full opacity-10 bg-white" />
-        <div className="absolute bottom-0 left-1/4 w-72 h-72 rounded-full opacity-5 bg-white" />
-        <div className="max-w-7xl mx-auto px-8 py-12 relative z-10">
-          <div className="max-w-2xl">
-            <span className="inline-flex items-center gap-2 bg-white/15 text-white text-xs font-bold px-4 py-2 rounded-full mb-5 border border-white/20">
-              <MapPin className="h-3.5 w-3.5" /> Bhimavaram · 50,000+ Happy Patients
-            </span>
-            <h1 className="text-5xl font-black text-white leading-tight mb-4">
-              Your Complete<br /><span className="text-sky-300">Healthcare</span> Platform
-            </h1>
-            <p className="text-blue-100 text-base font-medium mb-7 leading-relaxed">
-              Book doctors, order lab tests at home, and get medicines delivered — all in one place.
-            </p>
-            <div className="flex items-center gap-4">
-              <Link to="/doctors" className="inline-flex items-center gap-2 bg-white text-blue-600 font-black px-7 py-3.5 rounded-2xl hover:bg-blue-50 transition-all shadow-xl shadow-blue-900/30">
-                <Calendar className="h-5 w-5" /> Book Appointment
-              </Link>
-              <Link to="/lab-tests" className="inline-flex items-center gap-2 bg-white/10 border border-white/25 text-white font-bold px-6 py-3.5 rounded-2xl hover:bg-white/20 transition-all">
-                <FlaskConical className="h-5 w-5" /> Book Lab Test
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
 
       {/* ─────────────────────────────────────────
           MOBILE HEADER (below md)
@@ -424,114 +421,75 @@ const Index = () => {
             </div>
           </div>
 
-          {/* ── TOP DOCTORS ── */}
+          {/* ── PARTNER HOSPITALS / DOCTORS ── */}
           <div>
             <div className="flex items-center justify-between mb-3 md:mb-4">
-              <h2 className="text-base md:text-lg font-black text-slate-800">Top Doctors</h2>
-              <Link to="/doctors" className="text-xs md:text-sm font-bold text-blue-600 flex items-center gap-0.5">
-                See All <ChevronRight className="h-3.5 w-3.5" />
-              </Link>
+              <h2 className="text-base md:text-lg font-black text-slate-800 tracking-tight">
+                {viewDocsFor ? `Doctors at ${viewDocsFor.name}` : "Partner Hospitals"}
+              </h2>
+              {viewDocsFor ? (
+                <button onClick={() => setViewDocsFor(null)} className="text-xs md:text-sm font-black text-blue-600 flex items-center gap-1 bg-blue-50 px-3 py-1.5 rounded-full">
+                  <ArrowRight className="h-3 w-3 rotate-180" /> Back to Hospitals
+                </button>
+              ) : (
+                <Link to="/doctors" className="text-xs md:text-sm font-bold text-blue-600 flex items-center gap-0.5">
+                  See All <ChevronRight className="h-3.5 w-3.5" />
+                </Link>
+              )}
             </div>
 
-            {/* Mobile: horizontal scroll, Desktop: grid */}
-            <div className="md:hidden flex gap-3 overflow-x-auto pb-2 -mx-4 px-4" style={{ scrollbarWidth: "none" }}>
-              {doctors.map((doc: any, idx) => (
-                <div
-                  key={doc.id}
-                  className="flex-shrink-0 w-[140px] bg-white rounded-2xl p-3 flex flex-col items-center text-center border border-slate-100 active:scale-95 transition-all relative"
-                >
-                  <div
-                    className="h-11 w-11 rounded-xl flex items-center justify-center mb-2 text-white font-black text-lg shadow-md overflow-hidden"
-                    style={{ backgroundColor: avatarColors[idx % 4], boxShadow: `0 4px 12px ${avatarColors[idx % 4]}40` }}
-                  >
-                    {doc.image_url && doc.image_url.startsWith("http") ? (
-                      <img src={doc.image_url} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      initial(doc.name)
-                    )}
-                  </div>
-                  <p className="text-[11px] font-black text-slate-800 leading-tight mb-0.5 w-full truncate">{doc.name}</p>
-                  <p className="text-[9px] font-bold text-blue-600 mb-1 w-full truncate">{doc.specialty}</p>
-
-                  {/* Hospital Link */}
-                  {(doc.hospital_name || doc.hospitalName) && (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); navigate(`/doctors?hospital=${doc.hospital_id || doc.hospitalId}`); }}
-                      className="flex items-center justify-center gap-1 w-full relative z-10 hover:opacity-80 transition-opacity mb-2 bg-slate-50 py-1 rounded-md"
-                    >
-                      <Building2 className="h-2.5 w-2.5 text-slate-400" />
-                      <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest truncate">{doc.hospital_name || doc.hospitalName}</span>
-                    </button>
-                  )}
-
-                  <div className="flex items-center justify-center gap-1.5 mb-2 w-full">
-                    <span className="flex items-center gap-0.5 text-[9px] font-black text-slate-600">
-                      <Star className="h-2.5 w-2.5 text-amber-400 fill-amber-400" />{doc.rating || 4.8}
-                    </span>
-                    <span className="flex items-center gap-0.5 text-[9px] font-bold text-slate-400">
-                      <Clock className="h-2.5 w-2.5" />{doc.experience}y
-                    </span>
-                  </div>
+            {!viewDocsFor ? (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6">
+                {hospitals.map((h) => (
                   <button
-                    onClick={() => navigate(`/book-appointment/${doc.id}`)}
-                    className="w-full rounded-lg py-1.5 text-[9px] font-black text-white transition-all active:scale-95"
-                    style={{ backgroundColor: avatarColors[idx % 4] }}
+                    key={h.id}
+                    onClick={() => setViewDocsFor(h)}
+                    className="bg-white rounded-2xl md:rounded-3xl p-5 flex flex-col items-center text-center border border-slate-100 hover:shadow-xl hover:-translate-y-1 active:scale-95 transition-all group"
                   >
-                    Book Now
+                    <div className="h-14 w-14 md:h-16 md:w-16 rounded-2xl bg-blue-50 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-sm overflow-hidden border border-blue-100">
+                      {h.logo_url ? (
+                        <img src={h.logo_url} alt={h.name} className="h-full w-full object-cover" />
+                      ) : (
+                        <Building2 className="h-6 w-6 md:h-8 md:w-8 text-blue-600" />
+                      )}
+                    </div>
+                    <p className="text-[11px] md:text-sm font-black text-slate-800 leading-tight truncate w-full mb-1">{h.name}</p>
+                    <div className="bg-slate-50 px-2.5 py-1 rounded-lg">
+                      <p className="text-[9px] md:text-[10px] text-slate-500 font-black uppercase tracking-[0.1em]">
+                        {h.docCount} Specialized Doctors
+                      </p>
+                    </div>
                   </button>
-                </div>
-              ))}
-            </div>
-
-            {/* Desktop grid */}
-            <div className="hidden md:grid grid-cols-4 gap-4">
-              {doctors.map((doc: any, idx) => (
-                <div
-                  key={doc.id}
-                  className="bg-white rounded-3xl p-5 flex flex-col items-center text-center border border-slate-100 hover:shadow-xl hover:-translate-y-1 transition-all group relative"
-                >
+                ))}
+                {hospitals.length === 0 && (
+                  <div className="col-span-full py-12 text-center bg-white rounded-3xl border border-dashed border-slate-200">
+                    <Building2 className="h-8 w-8 text-slate-200 mx-auto mb-2" />
+                    <p className="text-slate-400 text-xs font-bold font-mono uppercase">Connecting with more hospitals...</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                {doctors.filter(d => (d.partner_id === viewDocsFor.partner_id)).map((doc) => (
                   <div
-                    className="h-16 w-16 rounded-2xl flex items-center justify-center mb-3 text-white font-black text-2xl shadow-lg group-hover:scale-110 transition-transform overflow-hidden"
-                    style={{ backgroundColor: avatarColors[idx % 4], boxShadow: `0 6px 16px ${avatarColors[idx % 4]}40` }}
+                    key={doc.id}
+                    className="bg-white rounded-2xl md:rounded-3xl p-4 flex flex-col items-center text-center border border-slate-100 hover:shadow-lg transition-all"
                   >
-                    {doc.image_url && doc.image_url.startsWith("http") ? (
-                      <img src={doc.image_url} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      initial(doc.name)
-                    )}
-                  </div>
-                  <p className="text-sm font-black text-slate-800 leading-tight mb-0.5 line-clamp-1">{doc.name}</p>
-                  <p className="text-[11px] font-bold text-blue-600 mb-2 line-clamp-1">{doc.specialty}</p>
-
-                  {/* Hospital Link */}
-                  {(doc.hospital_name || doc.hospitalName) && (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); navigate(`/doctors?hospital=${doc.hospital_id || doc.hospitalId}`); }}
-                      className="flex items-center justify-center gap-1 w-full bg-slate-50 py-1.5 rounded-lg mb-3 hover:bg-slate-100 transition-colors relative z-10"
+                    <div className="h-12 w-12 md:h-14 md:w-14 rounded-2xl bg-blue-600 flex items-center justify-center mb-3 text-white font-black text-xl shadow-lg shadow-blue-100 overflow-hidden">
+                      {doc.image_url ? <img src={doc.image_url} alt="" className="h-full w-full object-cover" /> : initial(doc.name)}
+                    </div>
+                    <p className="text-[11px] md:text-sm font-black text-slate-800 leading-tight truncate w-full mb-0.5">{doc.name}</p>
+                    <p className="text-[9px] md:text-[11px] text-blue-600 font-black uppercase tracking-wider mb-4">{doc.specialty}</p>
+                    <button
+                      onClick={() => navigate(`/book-appointment/${doc.id}`)}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-2.5 text-[10px] md:text-xs font-black shadow-md shadow-blue-100 transition-all active:scale-95"
                     >
-                      <Building2 className="h-3 w-3 text-slate-500" />
-                      <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest truncate">{doc.hospital_name || doc.hospitalName}</span>
+                      Book Now
                     </button>
-                  )}
-
-                  <div className="flex items-center justify-center gap-2 mb-3 w-full">
-                    <span className="flex items-center gap-0.5 text-xs font-black text-slate-600">
-                      <Star className="h-3 w-3 text-amber-400 fill-amber-400" />{doc.rating || 4.8}
-                    </span>
-                    <span className="flex items-center gap-0.5 text-xs font-bold text-slate-400">
-                      <Clock className="h-3 w-3" />{doc.experience} yrs
-                    </span>
                   </div>
-                  <button
-                    onClick={() => navigate(`/book-appointment/${doc.id}`)}
-                    className="w-full rounded-xl py-2.5 text-xs font-black text-white transition-all active:scale-95"
-                    style={{ backgroundColor: avatarColors[idx % 4] }}
-                  >
-                    Book Now
-                  </button>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* ── CTA BANNER ── */}

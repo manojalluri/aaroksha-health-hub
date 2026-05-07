@@ -9,7 +9,6 @@ import {
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useQuery } from "@tanstack/react-query";
-import { labTests as allMedicines } from "@/data/mockData";
 import { useAuth } from "@/contexts/AuthContext";
 
 const genOrderId = (prefix: string) => {
@@ -26,12 +25,7 @@ interface Medicine {
   qty?: number;
 }
 
-interface ExtraItem {
-  id: string;
-  name: string;
-  price: number;
-  qty: number;
-}
+
 
 interface PrescriptionRecord {
   id: string;
@@ -67,16 +61,12 @@ const PrescriptionPage = () => {
   const [prescriptionRecord, setPrescriptionRecord] = useState<PrescriptionRecord | null>(null);
   const [prescriptionId, setPrescriptionId] = useState<string | null>(null);
 
-  // Extra medicines (user adds more)
-  const [extraItems, setExtraItems] = useState<ExtraItem[]>([]);
-  const [extraSearch, setExtraSearch] = useState("");
-  const [showExtraSearch, setShowExtraSearch] = useState(false);
+
 
   const [isUploading, setIsUploading] = useState(false);
   const [confirmedOrderId, setConfirmedOrderId] = useState("");
   const [deliveryCode, setDeliveryCode] = useState("");
   const [codeCopied, setCodeCopied] = useState(false);
-  const [autoConfirm, setAutoConfirm] = useState(false);
   const [isExpress, setIsExpress] = useState(false);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
@@ -150,13 +140,14 @@ const PrescriptionPage = () => {
 
       const { data: prescriptionData, error: insertError } = await supabase.from("prescriptions").insert({
         user_id: user?.id,
-        order_id: genOrderId("RX"),
+        order_id: genOrderId("MED"),
         patient_name: name || user?.email?.split("@")[0] || "Patient",
         patient_phone: phone || "0000000000",
         delivery_address: address || "Hospital Pickup",
         image_url: finalImageUrl,
+        prescriptions: finalImageUrl ? [finalImageUrl] : [],
         status: "pending",
-        is_auto_confirm: autoConfirm,
+        is_auto_confirm: false,
         is_express_delivery: isExpress,
         medicines: [],
       }).select().single();
@@ -226,46 +217,23 @@ const PrescriptionPage = () => {
   const { data: settings } = useQuery({
     queryKey: ["platform-settings"],
     queryFn: async () => {
-      const { data } = await supabase.from("platform_settings").select("*").single();
-      return data || { pharmacy_fee: 19 };
+      const { data } = await supabase.from("platform_settings").select("*").eq("id", "global").single();
+      return data;
     }
   });
 
   const availableMeds = medicines.filter((m) => m.available);
   const prescriptionTotal = availableMeds.reduce((s, m) => s + m.price, 0);
-  const extraTotal = extraItems.reduce((s, i) => s + i.price * i.qty, 0);
   
   // Use admin provided fees if available (in review step), else use settings
-  const PLATFORM_FEE = prescriptionRecord?.platform_fee ? Number(prescriptionRecord.platform_fee) : Number(settings?.pharmacy_fee || 19);
-  const deliveryFee = prescriptionRecord?.delivery_fee ? Number(prescriptionRecord.delivery_fee) : 40;
+  const PLATFORM_FEE = prescriptionRecord?.platform_fee ? Number(prescriptionRecord.platform_fee) : Number(settings?.pharm_fee || 19);
   
-  const subTotal = prescriptionTotal + extraTotal;
+  const baseDelivery = Number(settings?.delivery_fee || 40);
+  const expressFee = Number(settings?.express_fee || 99);
+  const deliveryFee = prescriptionRecord?.delivery_fee ? Number(prescriptionRecord.delivery_fee) : (prescriptionRecord?.is_express_delivery ? expressFee : baseDelivery);
+  
+  const subTotal = prescriptionTotal;
   const grandTotal = subTotal > 0 ? subTotal + deliveryFee + PLATFORM_FEE : 0;
-
-  // Extra item helpers
-  const addExtra = (item: { id: string; name: string; price: number }) => {
-    const exists = extraItems.find((e) => e.id === item.id);
-    if (exists) {
-      setExtraItems(extraItems.map((e) => e.id === item.id ? { ...e, qty: e.qty + 1 } : e));
-    } else {
-      setExtraItems([...extraItems, { id: item.id, name: item.name, price: item.price, qty: 1 }]);
-    }
-    setExtraSearch("");
-    setShowExtraSearch(false);
-    toast.success(`${item.name} added`);
-  };
-
-  const updateQty = (id: string, delta: number) => {
-    setExtraItems(extraItems
-      .map((e) => e.id === id ? { ...e, qty: e.qty + delta } : e)
-      .filter((e) => e.qty > 0)
-    );
-  };
-
-  const filteredExtras = (allMedicines as { id: string; name: string; price: number; category: string }[]).filter(
-    (m) => m.name.toLowerCase().includes(extraSearch.toLowerCase()) &&
-    !extraItems.find((e) => e.id === m.id)
-  );
 
   const bottomNav = [
     { icon: Home, label: "Home", to: "/" },
@@ -602,6 +570,42 @@ const PrescriptionPage = () => {
             </div>
           )}
 
+          {/* ── Saved Address Picker ── */}
+          {(() => {
+            const sp = (() => { try { return JSON.parse(localStorage.getItem("aaroksha_profile") || "{}"); } catch { return {}; } })();
+            const hasSaved = !!(sp.name && sp.phone && sp.address);
+            if (!hasSaved) return null;
+            const savedAddr = [sp.address, sp.town, sp.pincode].filter(Boolean).join(", ");
+            const isUsingSaved = address === savedAddr && name === sp.name && phone === sp.phone;
+            return (
+              <div className={`rounded-2xl border-2 p-3.5 transition-all ${
+                isUsingSaved ? "bg-green-50 border-green-300" : "bg-slate-50 border-slate-200"
+              }`}>
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Saved Address</p>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2.5 flex-1">
+                    <MapPin className={`h-4 w-4 shrink-0 mt-0.5 ${isUsingSaved ? "text-green-600" : "text-slate-400"}`} />
+                    <div>
+                      <p className={`text-xs font-black ${isUsingSaved ? "text-green-800" : "text-slate-600"}`}>{sp.name} · {sp.phone}</p>
+                      <p className={`text-[10px] font-medium mt-0.5 leading-relaxed ${isUsingSaved ? "text-green-600" : "text-slate-400"}`}>{savedAddr}</p>
+                    </div>
+                  </div>
+                  {isUsingSaved ? (
+                    <button
+                      onClick={() => { setName(""); setPhone(""); setAddress(""); }}
+                      className="shrink-0 text-[10px] font-black text-slate-400 bg-white border border-slate-200 px-3 py-1.5 rounded-xl"
+                    >Change</button>
+                  ) : (
+                    <button
+                      onClick={() => { setName(sp.name); setPhone(sp.phone); setAddress(savedAddr); }}
+                      className="shrink-0 text-[10px] font-black text-green-700 bg-green-100 border border-green-200 px-3 py-1.5 rounded-xl hover:bg-green-200 transition-all"
+                    >Use This ✓</button>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
           <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-3">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Delivery Details</p>
             {[
@@ -629,7 +633,7 @@ const PrescriptionPage = () => {
                 <textarea
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
-                  placeholder="House/Flat No., Building Name&#10;Street, Area, Landmark&#10;City, Pincode"
+                  placeholder={"House/Flat No., Building Name\nStreet, Area, Landmark\nCity, Pincode"}
                   className="w-full h-24 rounded-xl bg-slate-50 border border-slate-200 pl-9 pr-3 py-3 text-sm text-slate-700 placeholder:text-slate-300 outline-none focus:border-green-300 focus:ring-2 focus:ring-green-100 transition-all resize-none"
                 />
               </div>
@@ -639,20 +643,7 @@ const PrescriptionPage = () => {
           <div>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Delivery & Confirmation Options</p>
             <div className="space-y-3">
-              <div className="flex items-center justify-between bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                <div className="flex items-center gap-2.5">
-                  <div className="h-8 w-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
-                    <CheckCircle className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-black text-slate-800">Auto-Confirm Order</p>
-                    <p className="text-[9px] font-bold text-slate-400 leading-tight">Proceed immediately after quote</p>
-                  </div>
-                </div>
-                <button onClick={() => setAutoConfirm(!autoConfirm)} className={`h-6 w-11 rounded-full transition-colors relative ${autoConfirm ? 'bg-emerald-500' : 'bg-slate-200'}`}>
-                  <div className={`absolute top-1 h-4 w-4 bg-white rounded-full transition-all ${autoConfirm ? 'left-6' : 'left-1'}`} />
-                </button>
-              </div>
+
 
               <div className="flex items-center justify-between bg-slate-50 p-3 rounded-2xl border border-slate-100">
                 <div className="flex items-center gap-2.5">
@@ -757,89 +748,15 @@ const PrescriptionPage = () => {
                         <p className="text-[9px] font-black text-green-500 uppercase">In Stock</p>
                       </>
                     ) : (
-                      <p className="text-[9px] font-black text-red-400 uppercase">Not Available</p>
+                      <>
+                        <p className="font-black text-slate-400 text-sm">₹{med.price}</p>
+                        <p className="text-[9px] font-black text-red-500 uppercase">Out of Stock</p>
+                      </>
                     )}
                   </div>
                 </div>
               ))}
             </div>
-          </div>
-
-          {/* Add More Medicines */}
-          <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-50 flex items-center justify-between">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Add More Medicines</p>
-              <button
-                onClick={() => setShowExtraSearch(!showExtraSearch)}
-                className="h-7 w-7 rounded-lg bg-green-100 flex items-center justify-center"
-              >
-                <Plus className="h-3.5 w-3.5 text-green-600" />
-              </button>
-            </div>
-
-            {/* Search for extra medicines */}
-            {showExtraSearch && (
-              <div className="px-4 py-3 border-b border-slate-50">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                  <input
-                    autoFocus
-                    value={extraSearch}
-                    onChange={(e) => setExtraSearch(e.target.value)}
-                    placeholder="Search medicines..."
-                    className="w-full h-10 rounded-xl bg-slate-50 border border-slate-200 pl-9 pr-3 text-sm text-slate-700 placeholder:text-slate-300 outline-none focus:border-green-300 transition-all"
-                  />
-                </div>
-                {extraSearch.length > 1 && (
-                  <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
-                    {filteredExtras.slice(0, 5).map((item) => (
-                      <button
-                        key={item.id}
-                        onClick={() => addExtra(item)}
-                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-white border border-slate-100 hover:border-green-200 hover:bg-green-50 transition-all text-left"
-                      >
-                        <div>
-                          <p className="text-xs font-black text-slate-700">{item.name}</p>
-                          <p className="text-[9px] font-bold text-slate-400">{item.category}</p>
-                        </div>
-                        <p className="text-sm font-black text-green-600">₹{item.price}</p>
-                      </button>
-                    ))}
-                    {filteredExtras.length === 0 && (
-                      <p className="text-xs text-slate-400 font-medium text-center py-3">No medicines found</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Extra items list */}
-            {extraItems.length > 0 ? (
-              <div className="divide-y divide-slate-50">
-                {extraItems.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between px-4 py-3">
-                    <div>
-                      <p className="text-sm font-black text-slate-800">{item.name}</p>
-                      <p className="text-[10px] font-bold text-slate-400">₹{item.price} × {item.qty}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => updateQty(item.id, -1)} className="h-7 w-7 rounded-lg bg-slate-100 flex items-center justify-center">
-                        <Minus className="h-3 w-3 text-slate-600" />
-                      </button>
-                      <span className="text-sm font-black text-slate-800 w-4 text-center">{item.qty}</span>
-                      <button onClick={() => updateQty(item.id, 1)} className="h-7 w-7 rounded-lg bg-green-100 flex items-center justify-center">
-                        <Plus className="h-3 w-3 text-green-600" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="px-4 py-5 text-center">
-                <ShoppingCart className="h-6 w-6 text-slate-300 mx-auto mb-2" />
-                <p className="text-xs font-bold text-slate-300">Tap + to add more medicines</p>
-              </div>
-            )}
           </div>
 
           {/* Bill Summary */}
@@ -850,12 +767,7 @@ const PrescriptionPage = () => {
                 <span className="font-medium text-slate-500">Prescription Medicines</span>
                 <span className="font-black text-slate-800">₹{prescriptionTotal}</span>
               </div>
-              {extraTotal > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="font-medium text-slate-500">Extra Medicines</span>
-                  <span className="font-black text-slate-800">₹{extraTotal}</span>
-                </div>
-              )}
+
               <div className="flex justify-between text-sm">
                 <span className="font-medium text-slate-500">Delivery Fee</span>
                 <span className="font-black text-slate-800">₹{deliveryFee}</span>
@@ -898,7 +810,7 @@ const PrescriptionPage = () => {
                 const { error: updateError } = await supabase
                   .from("prescriptions")
                   .update({
-                    medicines: [...medicines, ...extraItems],
+                    medicines: [...medicines],
                     sub_total: subTotal,
                     platform_fee: PLATFORM_FEE,
                     grand_total: grandTotal,
@@ -1010,7 +922,7 @@ const PrescriptionPage = () => {
                 setImage(null);
                 setSelectedFile(null);
                 setName(""); setPhone(""); setAddress("");
-                setMedicines([]); setExtraItems([]);
+                setMedicines([]);
                 setDeliveryCode("");
               }}
               className="w-full rounded-2xl py-3.5 text-sm font-bold border-2 border-slate-200 text-slate-600 bg-white"

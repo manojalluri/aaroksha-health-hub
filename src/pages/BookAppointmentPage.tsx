@@ -2,9 +2,9 @@ import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Calendar, Clock, Star, CheckCircle, Loader2,
-  ChevronLeft, Building2, Languages, Zap,
+  ChevronLeft, Building2, Zap, Smartphone, Banknote, User,
 } from "lucide-react";
-import { timeSlots, type PatientDetails } from "@/data/mockData";
+import { type PatientDetails } from "@/data/mockData";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useQuery } from "@tanstack/react-query";
@@ -24,6 +24,10 @@ interface Doctor {
   hospital_name?: string;
   hospital_id?: string;
   partner_id?: string;
+  available?: boolean;
+  time_slots?: string[];   // e.g. ["09:00 AM", "10:30 AM"]
+  advance_days?: number;   // how many days ahead patients can book
+  holidays?: string[];     // blocked dates in YYYY-MM-DD format
 }
 
 const genOrderId = (prefix: string) => {
@@ -57,15 +61,35 @@ const BookAppointmentPage = () => {
   const [isPriority, setIsPriority] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmedOrderId, setConfirmedOrderId] = useState("");
-  const [patient, setPatient] = useState<PatientDetails>({
-    name: "", age: "", gender: "", phone: "", email: "", address: "",
+  const [paymentMethod, setPaymentMethod] = useState<"upi" | "cod">("cod");
+
+  // Load saved profile from localStorage
+  const savedProfile = (() => {
+    try { return JSON.parse(localStorage.getItem("aaroksha_profile") || "{}"); } catch { return {}; }
+  })();
+  const hasSavedProfile = !!(savedProfile.name && savedProfile.phone);
+
+  const [patient, setPatient] = useState<any>({
+    name: "", age: "", gender: "", phone: "", email: "", address: "", town: "", symptoms: "",
   });
 
-  const dates = Array.from({ length: 7 }, (_, i) => {
+  // How many days ahead can patients book (set by hospital admin, default 7)
+  const advanceDays = doctor?.advance_days ?? 7;
+  const holidays: string[] = doctor?.holidays ?? [];
+  const dates = Array.from({ length: advanceDays }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() + i + 1);
     return d.toISOString().split("T")[0];
   });
+  // Separate available and holiday dates
+  const availableDates = dates.filter(d => !holidays.includes(d));
+  const holidayDates   = dates.filter(d => holidays.includes(d));
+
+  // Doctor's configured time slots (from Supabase)
+  const doctorSlots: string[] = doctor?.time_slots ?? [
+    "09:00 AM","09:30 AM","10:00 AM","10:30 AM","11:00 AM","11:30 AM",
+    "02:00 PM","02:30 PM","03:00 PM","04:00 PM","04:30 PM","05:00 PM",
+  ];
 
   const formatDate = (d: string) =>
     d ? new Date(d).toLocaleDateString("en-IN", { weekday: "short", month: "short", day: "numeric" }) : "";
@@ -73,9 +97,24 @@ const BookAppointmentPage = () => {
   const { data: settings } = useQuery({
     queryKey: ["platform-settings"],
     queryFn: async () => {
-      const { data } = await supabase.from("platform_settings").select("*").single();
-      return data || { opd_fee: 29, priority_surcharge: 250 };
+      const { data } = await supabase.from("platform_settings").select("*").eq("id", "global").single();
+      return data;
     }
+  });
+
+  // Fetch already-booked slots for the selected date
+  const { data: bookedSlots = [] } = useQuery<string[]>({
+    queryKey: ["booked-slots", doctor?.id, selectedDate],
+    enabled: !!doctor?.id && !!selectedDate,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("appointments")
+        .select("appointment_time")
+        .eq("doctor_id", doctor!.id)
+        .eq("appointment_date", selectedDate)
+        .in("status", ["pending", "confirmed"]);
+      return (data || []).map((r: any) => r.appointment_time as string);
+    },
   });
 
   const PRIORITY_FEE = Number(settings?.priority_surcharge || 250);
@@ -83,7 +122,7 @@ const BookAppointmentPage = () => {
   const totalAmount = Number(doctor?.fee || doctor?.consultationFee || 0) + PLATFORM_FEE + (isPriority ? PRIORITY_FEE : 0);
 
   const handleBooking = () => {
-    if (!patient.name || !patient.phone || !patient.age || !patient.gender) {
+    if (!patient.name || !patient.phone || !patient.age || !patient.gender || !patient.town || !patient.symptoms) {
       toast.error("Please fill all required fields");
       return;
     }
@@ -107,6 +146,8 @@ const BookAppointmentPage = () => {
         patient_email: patient.email || null,
         patient_age: patient.age ? String(patient.age) : null,
         patient_gender: patient.gender,
+        patient_town: patient.town,
+        notes: patient.symptoms,
         appointment_date: selectedDate,
         appointment_time: selectedSlot,
         status: "pending",
@@ -117,25 +158,23 @@ const BookAppointmentPage = () => {
         is_priority: isPriority,
         hospital_partner_id: doctor?.hospital_id || doctor?.partner_id,
         partner_id: doctor?.partner_id || doctor?.hospital_id,
+        payment_method: paymentMethod,
       }).select().single();
       setConfirmedOrderId(newOrderId);
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
-      // 2. Clear progress and start payment gateway
-      toast.loading("Handing off to PhonePe Secure Gateway...", { duration: 2000 });
+      const vCode = Array.from({ length: 6 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 32)]).join("");
 
-      // 3. Simulated PhonePe Hand-off
-      // In a real environment, this redirects to PhonePe.
-      // We implement a 'simulated' delay to reflect the premium experience.
-      await new Promise(r => setTimeout(r, 2000));
-
-      // 4. Update the record as 'paid' on successful simulated callback
+      // Update to confirmed (COD = pay at clinic, UPI = already paid)
       const { error: updateError } = await supabase
         .from("appointments")
-        .update({ payment_status: "paid", status: "confirmed" })
+        .update({
+          payment_status: paymentMethod === "upi" ? "paid" : "pending",
+          status: "confirmed",
+          payment_method: paymentMethod,
+          verification_code: vCode,
+        })
         .eq("id", appointment.id);
 
       if (updateError) throw updateError;
@@ -144,7 +183,7 @@ const BookAppointmentPage = () => {
       setStep("confirmed");
     } catch (err) {
       console.error(err);
-      toast.error("Transaction failed: " + (err instanceof Error ? err.message : "Unknown error"));
+      toast.error("Transaction failed: " + (err?.message || "Unknown error"));
     } finally {
       setIsSubmitting(false);
     }
@@ -161,8 +200,7 @@ const BookAppointmentPage = () => {
   const stepLabels = ["Slot", "Details", "Pay"];
   const currentStepIdx = steps.indexOf(step);
 
-  const colorIdx = parseInt(doctorId || "0") % avatarColors.length;
-  const accentColor = doctor ? avatarColors[colorIdx] : "#2563eb";
+  const accentColor = "#2563eb";
   const initial = doctor?.name?.replace("Dr. ", "").charAt(0) || "D";
 
   if (isDoctorLoading) {
@@ -273,27 +311,39 @@ const BookAppointmentPage = () => {
 
             <div className="flex gap-2.5 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
               {dates.map((d) => {
-                const dateObj = new Date(d);
+                const dateObj   = new Date(d + "T00:00:00");
                 const isSelected = selectedDate === d;
+                const isHoliday  = holidays.includes(d);
                 return (
                   <button
                     key={d}
-                    onClick={() => { setSelectedDate(d); setSelectedSlot(""); }}
-                    className="flex-shrink-0 w-[68px] py-3 rounded-2xl flex flex-col items-center gap-0.5 border-2 transition-all duration-200 active:scale-95"
+                    disabled={isHoliday}
+                    onClick={() => { if (!isHoliday) { setSelectedDate(d); setSelectedSlot(""); } }}
+                    className={`flex-shrink-0 w-[68px] py-3 rounded-2xl flex flex-col items-center gap-0.5 border-2 transition-all duration-200 active:scale-95 ${
+                      isHoliday ? "cursor-not-allowed opacity-60" : "cursor-pointer"
+                    }`}
                     style={
-                      isSelected
-                        ? { backgroundColor: accentColor, borderColor: accentColor, boxShadow: `0 4px 14px ${accentColor}40` }
-                        : { backgroundColor: "white", borderColor: "#e2e8f0" }
+                      isHoliday
+                        ? { backgroundColor: "#fff1f2", borderColor: "#fecdd3" }
+                        : isSelected
+                          ? { backgroundColor: accentColor, borderColor: accentColor, boxShadow: `0 4px 14px ${accentColor}40` }
+                          : { backgroundColor: "white", borderColor: "#e2e8f0" }
                     }
                   >
-                    <p className={`text-[9px] font-black uppercase tracking-widest ${isSelected ? "text-white/70" : "text-slate-400"}`}>
+                    <p className={`text-[9px] font-black uppercase tracking-widest ${
+                      isHoliday ? "text-red-400" : isSelected ? "text-white/70" : "text-slate-400"
+                    }`}>
                       {dateObj.toLocaleDateString("en-IN", { weekday: "short" })}
                     </p>
-                    <p className={`text-xl font-black leading-none ${isSelected ? "text-white" : "text-slate-800"}`}>
+                    <p className={`text-xl font-black leading-none ${
+                      isHoliday ? "text-red-400" : isSelected ? "text-white" : "text-slate-800"
+                    }`}>
                       {dateObj.getDate()}
                     </p>
-                    <p className={`text-[9px] font-black uppercase ${isSelected ? "text-white/70" : "text-slate-400"}`}>
-                      {dateObj.toLocaleDateString("en-IN", { month: "short" })}
+                    <p className={`text-[9px] font-black uppercase ${
+                      isHoliday ? "text-red-300" : isSelected ? "text-white/70" : "text-slate-400"
+                    }`}>
+                      {isHoliday ? "Holiday" : dateObj.toLocaleDateString("en-IN", { month: "short" })}
                     </p>
                   </button>
                 );
@@ -312,28 +362,29 @@ const BookAppointmentPage = () => {
               </div>
 
               <div className="grid grid-cols-3 gap-2.5">
-                {timeSlots.map((slot) => {
-                  const isSelected = selectedSlot === slot.time;
+                {doctorSlots.map((slotTime) => {
+                  const isBooked   = bookedSlots.includes(slotTime);
+                  const isSelected = selectedSlot === slotTime;
                   return (
                     <button
-                      key={slot.id}
-                      disabled={!slot.available}
-                      onClick={() => setSelectedSlot(slot.time)}
+                      key={slotTime}
+                      disabled={isBooked}
+                      onClick={() => setSelectedSlot(slotTime)}
                       className={`py-3 rounded-xl text-xs font-black tracking-tight border-2 transition-all duration-200 active:scale-95 ${
-                        !slot.available
+                        isBooked
                           ? "bg-slate-50 text-slate-300 border-transparent cursor-not-allowed"
                           : ""
                       }`}
                       style={
-                        slot.available
+                        !isBooked
                           ? isSelected
                             ? { backgroundColor: accentColor, borderColor: accentColor, color: "white", boxShadow: `0 4px 12px ${accentColor}40` }
                             : { backgroundColor: "white", borderColor: "#e2e8f0", color: "#475569" }
                           : {}
                       }
                     >
-                      {slot.time}
-                      {!slot.available && <span className="block text-[8px] font-bold mt-0.5 opacity-60">Booked</span>}
+                      {slotTime}
+                      {isBooked && <span className="block text-[8px] font-bold mt-0.5 opacity-60">Booked</span>}
                     </button>
                   );
                 })}
@@ -384,6 +435,33 @@ const BookAppointmentPage = () => {
       {/* ══════════ STEP 2: DETAILS ══════════ */}
       {step === "details" && (
         <main className="flex-1 px-4 pt-5 pb-28 space-y-4">
+          {/* Saved Profile Banner */}
+          {hasSavedProfile && (
+            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-blue-100 flex items-center justify-center shrink-0">
+                  <User className="h-4 w-4 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-xs font-black text-blue-800">{savedProfile.name}</p>
+                  <p className="text-[10px] font-bold text-blue-500">{savedProfile.phone}{savedProfile.town ? ` · ${savedProfile.town}` : ""}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setPatient((p: any) => ({
+                  ...p,
+                  name:  savedProfile.name  || p.name,
+                  phone: savedProfile.phone || p.phone,
+                  email: savedProfile.email || p.email,
+                  town:  savedProfile.town  || p.town,
+                }))}
+                className="shrink-0 text-[10px] font-black text-blue-600 bg-white border border-blue-200 px-3 py-1.5 rounded-xl hover:bg-blue-50 transition-all"
+              >
+                Use Saved ✓
+              </button>
+            </div>
+          )}
+
           <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-3">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Patient Information</p>
 
@@ -437,6 +515,30 @@ const BookAppointmentPage = () => {
                     {g}
                   </button>
                 ))}
+              </div>
+            </div>
+
+            {/* Town & Symptoms */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Town / Village *</label>
+                <input
+                  type="text"
+                  value={patient.town}
+                  onChange={(e) => setPatient({ ...patient, town: e.target.value })}
+                  placeholder="e.g. Bhimavaram"
+                  className="w-full h-11 rounded-xl bg-slate-50 border border-slate-200 px-3 text-sm text-slate-700 placeholder:text-slate-300 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition-all"
+                />
+              </div>
+              <div>
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Disease / Symptoms *</label>
+                <input
+                  type="text"
+                  value={patient.symptoms}
+                  onChange={(e) => setPatient({ ...patient, symptoms: e.target.value })}
+                  placeholder="e.g. Fever, Headache"
+                  className="w-full h-11 rounded-xl bg-slate-50 border border-slate-200 px-3 text-sm text-slate-700 placeholder:text-slate-300 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition-all"
+                />
               </div>
             </div>
 
@@ -514,6 +616,90 @@ const BookAppointmentPage = () => {
             </div>
           </div>
 
+          {/* Payment Method Picker */}
+          {(settings?.cod || settings?.upi) && (
+            <div className="bg-white rounded-2xl border border-slate-100 p-4">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Payment Method</p>
+              <div className="grid grid-cols-2 gap-3">
+                {settings?.cod && (
+                  <button
+                    onClick={() => setPaymentMethod("cod")}
+                    className={`flex flex-col items-center gap-2 p-3 rounded-2xl border-2 transition-all ${
+                      paymentMethod === "cod"
+                        ? "border-emerald-500 bg-emerald-50"
+                        : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                    }`}
+                  >
+                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${
+                      paymentMethod === "cod" ? "bg-emerald-100" : "bg-slate-100"
+                    }`}>
+                      <Banknote className={`h-5 w-5 ${paymentMethod === "cod" ? "text-emerald-600" : "text-slate-400"}`} />
+                    </div>
+                    <div className="text-center">
+                      <p className={`text-xs font-black ${paymentMethod === "cod" ? "text-emerald-700" : "text-slate-600"}`}>Cash at Clinic</p>
+                      <p className={`text-[9px] font-medium ${paymentMethod === "cod" ? "text-emerald-500" : "text-slate-400"}`}>Pay when you visit</p>
+                    </div>
+                    {paymentMethod === "cod" && (
+                      <div className="h-5 w-5 rounded-full bg-emerald-500 flex items-center justify-center">
+                        <CheckCircle className="h-3 w-3 text-white" />
+                      </div>
+                    )}
+                  </button>
+                )}
+                {settings?.upi && (
+                  <button
+                    onClick={() => setPaymentMethod("upi")}
+                    className={`flex flex-col items-center gap-2 p-3 rounded-2xl border-2 transition-all ${
+                      paymentMethod === "upi"
+                        ? "border-blue-500 bg-blue-50"
+                        : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                    }`}
+                  >
+                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${
+                      paymentMethod === "upi" ? "bg-blue-100" : "bg-slate-100"
+                    }`}>
+                      <Smartphone className={`h-5 w-5 ${paymentMethod === "upi" ? "text-blue-600" : "text-slate-400"}`} />
+                    </div>
+                    <div className="text-center">
+                      <p className={`text-xs font-black ${paymentMethod === "upi" ? "text-blue-700" : "text-slate-600"}`}>UPI Payment</p>
+                      <p className={`text-[9px] font-medium ${paymentMethod === "upi" ? "text-blue-500" : "text-slate-400"}`}>Pay via any UPI app</p>
+                    </div>
+                    {paymentMethod === "upi" && (
+                      <div className="h-5 w-5 rounded-full bg-blue-500 flex items-center justify-center">
+                        <CheckCircle className="h-3 w-3 text-white" />
+                      </div>
+                    )}
+                  </button>
+                )}
+              </div>
+
+              {/* UPI ID display */}
+              {paymentMethod === "upi" && settings?.upi_id && (
+                <div className="mt-3 bg-blue-50 border border-blue-200 rounded-xl p-3">
+                  <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">Pay to UPI ID</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-black text-blue-800 font-mono">{settings?.upi_id}</p>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(settings?.upi_id); toast.success("UPI ID copied!"); }}
+                      className="text-[10px] font-black text-blue-600 bg-white border border-blue-200 px-2 py-1 rounded-lg"
+                    >Copy</button>
+                  </div>
+                  <p className="text-[9px] text-blue-400 font-medium mt-1">⚠️ Complete the UPI payment then click confirm below</p>
+                </div>
+              )}
+
+              {/* COD info */}
+              {paymentMethod === "cod" && (
+                <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-start gap-2">
+                  <Banknote className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+                  <p className="text-[10px] font-medium text-emerald-700 leading-relaxed">
+                    Please bring the exact amount of <span className="font-black">₹{totalAmount}</span> when you visit the clinic.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Patient info summary */}
           <div className="bg-white rounded-2xl border border-slate-100 p-4">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Patient</p>
@@ -527,7 +713,11 @@ const BookAppointmentPage = () => {
             className="w-full rounded-2xl py-4 text-sm font-black text-white shadow-xl active:scale-[0.99] transition-all disabled:opacity-70 flex items-center justify-center gap-2"
             style={{ backgroundColor: accentColor, boxShadow: `0 6px 20px ${accentColor}40` }}
           >
-            {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <>Pay ₹{totalAmount} Now {isPriority && "⚡"} →</>}
+            {isSubmitting
+              ? <Loader2 className="h-5 w-5 animate-spin" />
+              : paymentMethod === "cod"
+                ? <>Confirm Booking (Pay at Clinic) →</>
+                : <>Confirm & Mark UPI Paid {isPriority && "⚡"} →</>}
           </button>
 
 

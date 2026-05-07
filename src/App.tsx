@@ -19,10 +19,12 @@ import SuperAdminDashboard from "./pages/admin/SuperAdminDashboard";
 import HospitalLogin from "./pages/admin/HospitalLogin";
 import LabLogin from "./pages/admin/LabLogin";
 import PharmacyLogin from "./pages/admin/PharmacyLogin";
-import SuperAdminLogin from "./pages/admin/SuperAdminLogin";
-
 import LogisticsDashboard from "./pages/admin/LogisticsDashboard";
 import LogisticsLogin from "./pages/admin/LogisticsLogin";
+import SuperAdminLogin from "./pages/admin/SuperAdminLogin";
+import ProtectedAdminRoute from "./components/ProtectedAdminRoute";
+
+
 
 import { getSettings, syncSettingsFromSupabase } from "./lib/settingsSync";
 import { useState, useEffect } from "react";
@@ -92,18 +94,40 @@ const AppRoutes = () => {
         </>
       )}
 
-      {/* Admin Routes */}
-      <Route path="/admin/hospital" element={<HospitalDashboard />} />
-      <Route path="/admin/lab" element={<LabDashboard />} />
-      <Route path="/admin/pharmacy" element={<PharmacyDashboard />} />
-      <Route path="/admin/super" element={<SuperAdminDashboard />} />
-      <Route path="/admin/logistics" element={<LogisticsDashboard />} />
+      {/* Admin Routes — protected at router level */}
+      <Route path="/admin/hospital" element={
+        <ProtectedAdminRoute role="hospital" loginPath="/admin/login/hospital">
+          <HospitalDashboard />
+        </ProtectedAdminRoute>
+      } />
+      <Route path="/admin/lab" element={
+        <ProtectedAdminRoute role="lab" loginPath="/admin/login/lab">
+          <LabDashboard />
+        </ProtectedAdminRoute>
+      } />
+      <Route path="/admin/pharmacy" element={
+        <ProtectedAdminRoute role="pharmacy" loginPath="/admin/login/pharmacy">
+          <PharmacyDashboard />
+        </ProtectedAdminRoute>
+      } />
+      <Route path="/admin/logistics" element={
+        <ProtectedAdminRoute role="logistics" loginPath="/admin/login/logistics">
+          <LogisticsDashboard />
+        </ProtectedAdminRoute>
+      } />
+      <Route path="/admin/super" element={
+        <ProtectedAdminRoute role="super" loginPath="/admin/login/super">
+          <SuperAdminDashboard />
+        </ProtectedAdminRoute>
+      } />
+
       
       <Route path="/admin/login/hospital" element={<HospitalLogin />} />
       <Route path="/admin/login/lab" element={<LabLogin />} />
       <Route path="/admin/login/pharmacy" element={<PharmacyLogin />} />
-      <Route path="/admin/login/super" element={<SuperAdminLogin />} />
       <Route path="/admin/login/logistics" element={<LogisticsLogin />} />
+      <Route path="/admin/login/super" element={<SuperAdminLogin />} />
+
       
       {!settings.is_maintenance && <Route path="*" element={<NotFound />} />}
     </Routes>
@@ -111,12 +135,10 @@ const AppRoutes = () => {
 };
 
 const App = () => {
-  console.log("App component: rendering full application");
   return (
     <AuthProvider>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <Toaster />
           <Sonner />
           <BrowserRouter>
             <AppRoutes />

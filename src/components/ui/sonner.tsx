@@ -12,18 +12,19 @@ const Toaster = ({ ...props }: ToasterProps) => {
       className="toaster group"
       richColors
       expand={true}
+      gap={0}
       position="top-right"
       toastOptions={{
         classNames: {
           toast:
-            "group toast group-[.toaster]:bg-white group-[.toaster]:text-slate-900 group-[.toaster]:border-border group-[.toaster]:shadow-[0_20px_25px_-5px_rgba(0,0,0,0.1),0_8px_10px_-6px_rgba(0,0,0,0.1)] group-[.toaster]:rounded-2xl group-[.toaster]:font-bold group-[.toaster]:p-6 group-[.toaster]:gap-4 group-[.toaster]:overflow-hidden group-[.toaster]:relative",
-          description: "group-[.toast]:text-slate-500 font-semibold text-xs",
-          actionButton: "group-[.toast]:bg-slate-900 group-[.toast]:text-white font-black rounded-xl px-4 py-2 transition-transform active:scale-95",
+            "group toast group-[.toaster]:bg-white group-[.toaster]:text-slate-900 group-[.toaster]:border-slate-100 group-[.toaster]:shadow-[0_15px_30px_-5px_rgba(0,0,0,0.1)] group-[.toaster]:rounded-xl group-[.toaster]:font-bold group-[.toaster]:p-4 group-[.toaster]:gap-3 group-[.toaster]:overflow-hidden",
+          description: "group-[.toast]:text-slate-500 font-semibold text-[10px]",
+          actionButton: "group-[.toast]:bg-blue-600 group-[.toast]:text-white font-black rounded-xl px-4 py-2 transition-transform active:scale-95",
           cancelButton: "group-[.toast]:bg-slate-100 group-[.toast]:text-slate-500 font-bold rounded-xl px-4 py-2",
-          success: "group-[.toast]:border-l-4 group-[.toast]:border-l-emerald-500 group-[.toast]:bg-emerald-50/10",
-          error: "group-[.toast]:border-l-4 group-[.toast]:border-l-red-500 group-[.toast]:bg-red-50/10",
-          info: "group-[.toast]:border-l-4 group-[.toast]:border-l-blue-500 group-[.toast]:bg-blue-50/10",
-          warning: "group-[.toast]:border-l-4 group-[.toast]:border-l-amber-500 group-[.toast]:bg-amber-50/10",
+          success: "group-[.toast]:border-l-4 group-[.toast]:border-l-green-600 group-[.toast]:bg-green-50/30",
+          error: "group-[.toast]:border-l-4 group-[.toast]:border-l-red-600 group-[.toast]:bg-red-50/30",
+          info: "group-[.toast]:border-l-4 group-[.toast]:border-l-blue-600 group-[.toast]:bg-blue-50/30",
+          warning: "group-[.toast]:border-l-4 group-[.toast]:border-l-amber-500 group-[.toast]:bg-amber-50/30",
         },
       }}
       {...props}

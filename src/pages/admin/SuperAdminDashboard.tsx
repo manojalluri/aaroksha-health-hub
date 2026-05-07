@@ -12,8 +12,6 @@ import {
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
 import { Banner, getBanners, saveBanners } from "@/lib/bannersSync";
 import { getSettings, saveSettingsLocally, saveSettingsToSupabase } from "@/lib/settingsSync";
 import { useNavigate } from "react-router-dom";
@@ -83,7 +81,7 @@ interface Prescription extends BookingItem {
   is_express_delivery?: boolean;
   admin_note?: string;
   delivery_code?: string;
-  assigned_partner_id?: string;
+  logistics_partner_id?: string;
 }
 
 interface PlatformUser {
@@ -107,6 +105,7 @@ interface Partner {
   commission_type: "percentage" | "fixed";
   commission_rate: number;
   partner_id: string;
+  category?: "lab" | "pharmacy";
   status: "active" | "inactive";
   created_at?: string;
 }
@@ -165,6 +164,30 @@ const SuperAdminDashboard = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isVerifying, setIsVerifying] = useState(true);
 
+  // ─── CSV EXPORTER ──────────────────────────────────────────────────────────
+  const downloadCSV = (data: any[], filename: string, columns: { header: string, key: string }[]) => {
+    if (!data || data.length === 0) {
+      toast.error("No data to export");
+      return;
+    }
+    const csvContent = [
+      columns.map(c => c.header).join(","),
+      ...data.map(row => columns.map(c => {
+        let val = row[c.key];
+        if (val === undefined || val === null) val = "";
+        val = String(val).replace(/"/g, '""');
+        return `"${val}"`;
+      }).join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `${filename}_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    toast.success(`${filename} Exported!`);
+  };
+
   // ─── SECURITY GUARD ────────────────────────────────────────────────────────
   useEffect(() => {
     async function checkAuth() {
@@ -206,15 +229,17 @@ const SuperAdminDashboard = () => {
   const [customDate, setCustomDate] = useState({ start: "", end: "" });
   const [liveFilter, setLiveFilter] = useState("all");
   // Order Lookup state
+  const [lookupError, setLookupError] = useState("");
   const [lookupId, setLookupId] = useState("");
   const [lookupResult, setLookupResult] = useState<LookupResult | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
-  const [lookupError, setLookupError] = useState("");
   const [newPartner, setNewPartner] = useState({
     name: "", type: "hospital" as "hospital" | "lab" | "pharmacy" | "logistics",
     email: "", password: genPassword(), phone: "", address: "",
     commission_type: "percentage" as "percentage" | "fixed",
     commission_rate: 10,
+    settlement_cycle: "monthly" as "today" | "daily" | "weekly" | "monthly",
+    category: "pharmacy" as "lab" | "pharmacy"
   });
   
   const [toggles, setToggles] = useState(getSettings());
@@ -282,21 +307,46 @@ const SuperAdminDashboard = () => {
   };
 
   const handleBannerUpload = async (id: string, file: File) => {
-    const loadingToast = toast.loading("Uploading image...");
+    const loadingToast = toast.loading("Uploading banner image...");
     try {
       const cleanFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
       const fileName = `banner-${id}-${Date.now()}-${cleanFileName}`;
       const { data, error } = await supabase.storage.from("banners").upload(fileName, file, { upsert: true });
       if (error) throw error;
       const { data: { publicUrl } } = supabase.storage.from("banners").getPublicUrl(data.path);
-      handleUpdateBanner(id, "image", publicUrl);
+
+      // Auto-enable imageOnly so the image shows exactly as-is (no text overlay)
+      const updated = platformBanners.map(b =>
+        b.id === id ? { ...b, image: publicUrl, imageOnly: true } : b
+      );
+      persistBanners(updated);
+
+      // Also persist image_url to Supabase so it survives page refresh
+      const banner = updated.find(b => b.id === id);
+      if (banner) {
+        await supabase.from("platform_banners").upsert({
+          id: id.includes("default") ? "00000000-0000-0000-0000-00000000000" + id.slice(-1) : id,
+          title: banner.title || "Banner",
+          subtitle: banner.subtitle || "",
+          image_url: publicUrl,
+          link_to: banner.to || "/",
+          cta_text: banner.cta || "Learn More",
+          gradient: banner.gradient,
+          cta_color: banner.ctaColor,
+          emoji: banner.emoji,
+          badge_text: banner.badge,
+          is_active: true,
+        });
+      }
+
       toast.dismiss(loadingToast);
-      toast.success("Image uploaded!");
+      toast.success("Banner image uploaded - showing on homepage as-is ✅");
     } catch (err: any) {
       toast.dismiss(loadingToast);
       toast.error("Upload failed: " + err.message);
     }
   };
+
 
   // ─── Data Queries ──────────────────────────────────────────────────────────
   const { data: appointments = [] } = useQuery<Appointment[]>({ 
@@ -314,15 +364,12 @@ const SuperAdminDashboard = () => {
   const { data: platformUsers = [], refetch: refetchUsers } = useQuery<PlatformUser[]>({
     queryKey: ["admin-users"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("profiles").select("*");
-      if (error || !data || data.length === 0) {
-        return [
-          { id: "u1", full_name: "Rahul Sharma", email: "rahul@example.com", phone: "+91 9876543210", role: "patient", is_suspended: false, created_at: new Date().toISOString() },
-          { id: "u2", full_name: "Priya Singh", email: "priya@example.com", phone: "+91 8765432109", role: "patient", is_suspended: true, created_at: new Date(Date.now() - 86400000).toISOString() },
-          { id: "u3", full_name: "Amit Patel", email: "amit.p@example.com", phone: "+91 7654321098", role: "patient", is_suspended: false, created_at: new Date(Date.now() - 172800000).toISOString() },
-        ];
+      const { data, error } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
+      if (error) {
+        console.error("Error fetching users:", error);
+        return [];
       }
-      return data as PlatformUser[];
+      return (data || []) as PlatformUser[];
     }
   });
 
@@ -435,23 +482,26 @@ const SuperAdminDashboard = () => {
 
   // ─── Add Partner Handler ───────────────────────────────────────────────────
   const handleAddPartner = async () => {
-    if (!newPartner.name || !newPartner.email) { toast.error("Name and email are required"); return; }
+    const dataToSave = editingPartner || newPartner;
+    if (!dataToSave.name || !dataToSave.email) { toast.error("Name and email are required"); return; }
     setAddLoading(true);
     try {
-      const partnerId = genPartnerId(newPartner.type);
+      const partnerId = editingPartner ? editingPartner.partner_id : genPartnerId(dataToSave.type);
       
       const partnerData = {
-        name: newPartner.name, 
-        type: newPartner.type,
-        email: newPartner.email, 
-        password: newPartner.password,
-        phone: newPartner.phone, 
-        address: newPartner.address,
-        commission_type: newPartner.commission_type,
-        commission_rate: newPartner.commission_rate,
+        name: dataToSave.name, 
+        type: dataToSave.type,
+        email: dataToSave.email, 
+        password: dataToSave.password,
+        phone: dataToSave.phone, 
+        address: dataToSave.address,
+        commission_type: dataToSave.commission_type,
+        commission_rate: dataToSave.commission_rate,
+        settlement_cycle: dataToSave.settlement_cycle || "monthly",
+        category: dataToSave.type === "logistics" ? dataToSave.category : null,
         partner_id: partnerId, 
-        status: "active" as const,
-        created_at: new Date().toISOString(),
+        status: "active",
+        created_at: editingPartner ? editingPartner.created_at : new Date().toISOString(),
       };
 
       let error;
@@ -468,23 +518,38 @@ const SuperAdminDashboard = () => {
       toast.success(editingPartner ? "Partner updated successfully!" : `✅ ${newPartner.name} added successfully! Partner ID: ${partnerId}`);
       setShowAddPartner(false);
       setEditingPartner(null);
-      setNewPartner({ name: "", type: "hospital", email: "", password: genPassword(), phone: "", address: "", commission_type: "percentage", commission_rate: 10 });
+      setNewPartner({ name: "", type: "hospital", email: "", password: genPassword(), phone: "", address: "", commission_type: "percentage", commission_rate: 10, settlement_cycle: "monthly", category: "pharmacy" });
       refetchPartners();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save partner");
+    } catch (err: any) {
+      console.error("Error saving partner:", err);
+      toast.error(err.message || "Failed to save partner. Make sure to run the SQL script provided.");
     } finally {
       setAddLoading(false);
     }
   };
 
-  const handleDeletePartner = async (id: string) => {
+  const handleDeletePartner = async (p: any) => {
+    const confirmMsg = `Are you sure you want to PERMANENTLY delete ${p.name}? \n\nThis will remove their dashboard access and settlement history. Linked records (doctors, tests) will be orphaned.`;
+    if (!window.confirm(confirmMsg)) return;
+
     try {
-      const { error } = await supabase.from("partners").delete().eq("id", id);
+      // 1. First, nullify references in dependent tables to avoid FK violations
+      // This is the most comprehensive cleanup to ensure no record blocks the delete
+      await supabase.from("doctors").update({ hospital_id: null, partner_id: null }).eq("hospital_id", p.partner_id);
+      await supabase.from("doctors").update({ hospital_id: null, partner_id: null }).eq("partner_id", p.partner_id);
+      await supabase.from("appointments").update({ hospital_partner_id: null, partner_id: null }).eq("hospital_partner_id", p.partner_id);
+      await supabase.from("lab_bookings").update({ partner_id: null }).eq("partner_id", p.partner_id);
+      await supabase.from("prescriptions").update({ partner_id: null, logistics_partner_id: null }).eq("partner_id", p.partner_id);
+      await supabase.from("lab_tests").update({ partner_id: null }).eq("partner_id", p.partner_id);
+      
+      // 2. Now delete the partner
+      const { error } = await supabase.from("partners").delete().eq("id", p.id);
       if (error) throw error;
-      toast.success("Partner removed");
+      toast.success(`Partner ${p.name} removed successfully`);
       refetchPartners();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to remove partner");
+    } catch (err: any) {
+      console.error("Delete Partner Error:", err);
+      toast.error(err.message || "Failed to remove partner. Check for active appointments or bookings first.");
     }
   };
 
@@ -536,15 +601,16 @@ const SuperAdminDashboard = () => {
 
   const logisticPartners = partners.filter(p => p.type === "logistics" && p.status === "active");
 
-  const handleAssignPartner = async (prescriptionId: string, partnerId: string, partnerName: string) => {
-    setAssigningId(prescriptionId);
+  const handleAssignPartner = async (orderId: string, partnerId: string, partnerName: string, type: 'pharmacy' | 'lab') => {
+    setAssigningId(orderId);
     try {
+      const table = type === 'pharmacy' ? 'prescriptions' : 'lab_bookings';
       const { error } = await supabase
-        .from("prescriptions")
-        .update({ assigned_partner_id: partnerId })
-        .eq("id", prescriptionId);
+        .from(table)
+        .update({ logistics_partner_id: partnerId })
+        .eq("id", orderId);
       if (error) throw error;
-      qc.invalidateQueries({ queryKey: ["admin-prescriptions"] });
+      qc.invalidateQueries({ queryKey: [type === 'pharmacy' ? "admin-prescriptions" : "admin-lab-bookings"] });
       toast.success(`Order assigned to ${partnerName}`);
     } catch (err: any) {
       toast.error("Assignment failed: " + err.message);
@@ -553,15 +619,16 @@ const SuperAdminDashboard = () => {
     }
   };
 
-  // Delivery orders = prescriptions that are dispatched or completed
-  const deliveryOrders = prescriptions.filter(p =>
-    ["dispatched", "completed", "reviewed"].includes(p.status)
-  );
+  // Delivery orders = prescriptions + lab bookings for logistics management
+  const deliveryOrders = [
+    ...prescriptions.filter(p => ["dispatched", "completed", "reviewed"].includes(p.status)).map(p => ({ ...p, type: 'pharmacy' as const })),
+    ...labBookings.filter(b => ["confirmed", "collected", "processing", "completed"].includes(b.status)).map(b => ({ ...b, type: 'lab' as const }))
+  ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   const totalToDeliver   = deliveryOrders.length;
   const pendingDelivery  = deliveryOrders.filter(p => p.status === "reviewed" || p.status === "dispatched").length;
   const delivered        = deliveryOrders.filter(p => p.status === "completed").length;
-  const unassigned       = deliveryOrders.filter(p => !p.assigned_partner_id).length;
-  const assignedOrders   = deliveryOrders.filter(p => !!p.assigned_partner_id).length;
+  const unassigned       = deliveryOrders.filter(p => !(p as any).logistics_partner_id).length;
+  const assignedOrders   = deliveryOrders.filter(p => !!(p as any).logistics_partner_id).length;
 
   // ─── Nav Items ─────────────────────────────────────────────────────────────
   const NAV = [
@@ -584,21 +651,20 @@ const SuperAdminDashboard = () => {
 
       {/* ── Sidebar ─────────────────────────────────────────────────────── */}
       <aside className="w-60 bg-[#0F172A] flex flex-col shrink-0">
-        {/* Logo */}
         <div className="px-5 py-6 border-b border-white/5">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/30">
-              <ShieldCheck className="h-5 w-5 text-white" />
+            <div className="h-12 w-12 overflow-hidden shrink-0">
+              <img src="/logo.png" alt="Aaroksha" className="w-full h-full object-contain" />
             </div>
             <div>
-              <p className="text-white font-black text-sm leading-none">Aaroksha</p>
-              <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mt-0.5">Super Admin</p>
+              <p className="text-white font-black text-xs leading-none uppercase tracking-tighter">Super Admin</p>
+              <p className="text-slate-500 text-[9px] font-bold uppercase tracking-widest mt-1">Platform Control</p>
             </div>
           </div>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto scrollbar-hide">
           <p className="text-slate-600 text-[9px] font-black uppercase tracking-widest px-2 mb-2">Platform</p>
           {NAV.slice(0, 6).map(n => (
             <button key={n.id} onClick={() => setActiveTab(n.id)}
@@ -657,7 +723,7 @@ const SuperAdminDashboard = () => {
           </div>
           <div className="flex items-center gap-3">
             {activeTab === "partners" && (
-              <button onClick={() => setShowAddPartner(true)}
+              <button onClick={() => { setEditingPartner(null); setShowAddPartner(true); }}
                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-4 py-2 rounded-xl shadow-lg shadow-blue-200 transition-all active:scale-95">
                 <Plus className="h-4 w-4" /> Add Partner
               </button>
@@ -669,7 +735,7 @@ const SuperAdminDashboard = () => {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-8">
+        <main className="flex-1 overflow-y-auto p-8 scrollbar-hide">
 
           {/* ── OVERVIEW ──────────────────────────────────────────────── */}
           {activeTab === "overview" && (
@@ -798,10 +864,16 @@ const SuperAdminDashboard = () => {
                             {isLab && `Lab Booking: ${labData?.test_names?.join(", ") || "Tests"} by ${item.patient_name || "Unknown"}`}
                             {isPharm && `Pharmacy Order: ${pharmData?.medicines?.length || 1} items by ${item.patient_name || "Unknown"}`}
                           </p>
-                          <div className="flex items-center gap-2 mt-0.5">
+                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{isOpd ? "OPD" : isLab ? "LAB" : "PHARMACY"}</span>
                             <span className="text-[10px] text-slate-400">·</span>
                             <span className="text-xs font-medium text-slate-500">{new Date(item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                            {item.order_id && (
+                              <>
+                                <span className="text-[10px] text-slate-400">·</span>
+                                <span className="text-[10px] font-black font-mono text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md tracking-wider">{item.order_id}</span>
+                              </>
+                            )}
                           </div>
                         </div>
                         <div className="text-right">
@@ -934,11 +1006,11 @@ const SuperAdminDashboard = () => {
                         <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
                           <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
                             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Patient Name</p>
-                            <p className="text-sm font-black text-slate-900">{r.patient_name || "—"}</p>
+                            <p className="text-sm font-black text-slate-900">{r.patient_name || "-"}</p>
                           </div>
                           <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
                             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Mobile Number</p>
-                            <p className="text-sm font-black text-slate-900">{r.patient_phone || "—"}</p>
+                            <p className="text-sm font-black text-slate-900">{r.patient_phone || "-"}</p>
                           </div>
                           <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
                             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Payment Status</p>
@@ -961,6 +1033,43 @@ const SuperAdminDashboard = () => {
                         </div>
                       </div>
 
+                      {/* ─ Verification Codes ─ */}
+                      {( (isMed && medResult?.delivery_code) || (isLab && labResult?.collection_code) ) && (
+                        <div>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                            <KeyRound className="h-3.5 w-3.5" /> Security & Verification
+                          </p>
+                          <div className="bg-violet-50 border-2 border-violet-100 rounded-2xl p-5 flex items-center justify-between shadow-sm">
+                            <div className="flex items-center gap-4">
+                              <div className="h-12 w-12 bg-white rounded-xl flex items-center justify-center shadow-sm">
+                                <KeyRound className="h-6 w-6 text-violet-600" />
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-black text-violet-400 uppercase tracking-widest">
+                                  {isMed ? "Medicine Delivery Code" : "Lab Collection Code"}
+                                </p>
+                                <p className="text-3xl font-black text-violet-900 font-mono tracking-widest">
+                                  {isMed ? medResult?.delivery_code : labResult?.collection_code}
+                                </p>
+                              </div>
+                            </div>
+                            <button 
+                              onClick={() => {
+                                const code = isMed ? medResult?.delivery_code : labResult?.collection_code;
+                                if (code) {
+                                  navigator.clipboard.writeText(code);
+                                  toast.success("Verification code copied to clipboard");
+                                }
+                              }}
+                              className="h-10 px-4 bg-white border border-violet-200 rounded-xl text-xs font-black text-violet-600 hover:bg-violet-100 transition-all shadow-sm flex items-center gap-2"
+                            >
+                              <Copy className="h-3.5 w-3.5" /> Copy Code
+                            </button>
+                          </div>
+                          <p className="text-[10px] text-violet-400 mt-2 italic">Share this code with the patient if they have lost it or cannot access their profile.</p>
+                        </div>
+                      )}
+
                       {/* ─ Booking Specifics ─ */}
                       <div>
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
@@ -970,7 +1079,7 @@ const SuperAdminDashboard = () => {
                           {isOpd && (<>
                             <div className={`${typeConfig.bg} rounded-xl p-3 border ${typeConfig.border}`}>
                               <p className={`text-[9px] font-black uppercase tracking-widest mb-0.5 ${typeConfig.accent}`}>Doctor</p>
-                              <p className="text-sm font-black text-slate-900">{opdResult?.doctor_name || "—"}</p>
+                              <p className="text-sm font-black text-slate-900">{opdResult?.doctor_name || "-"}</p>
                             </div>
                             <div className={`${typeConfig.bg} rounded-xl p-3 border ${typeConfig.border}`}>
                               <p className={`text-[9px] font-black uppercase tracking-widest mb-0.5 ${typeConfig.accent}`}>Date & Time</p>
@@ -979,7 +1088,7 @@ const SuperAdminDashboard = () => {
                             {(opdResult?.patient_age || opdResult?.patient_gender) && (
                               <div className={`${typeConfig.bg} rounded-xl p-3 border ${typeConfig.border}`}>
                                 <p className={`text-[9px] font-black uppercase tracking-widest mb-0.5 ${typeConfig.accent}`}>Age / Gender</p>
-                                <p className="text-sm font-black text-slate-900">{opdResult?.patient_age} yrs · {opdResult?.patient_gender || "—"}</p>
+                                <p className="text-sm font-black text-slate-900">{opdResult?.patient_age} yrs · {opdResult?.patient_gender || "-"}</p>
                               </div>
                             )}
                             {opdResult?.is_priority && (
@@ -1014,6 +1123,43 @@ const SuperAdminDashboard = () => {
                                 <p className="text-sm font-bold text-slate-700">"{medResult?.admin_note}"</p>
                               </div>
                             )}
+                            {/* Logistics Assignment for Super Admin */}
+                            <div className="bg-indigo-50 rounded-xl p-4 border border-indigo-100 col-span-2 lg:col-span-3">
+                              <div className="flex items-center justify-between mb-3">
+                                <div>
+                                  <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-0.5">Logistics Assignment</p>
+                                  <p className="text-sm font-black text-indigo-900">Assign Delivery Partner</p>
+                                </div>
+                                <Truck className="h-5 w-5 text-indigo-400" />
+                              </div>
+                              <div className="flex gap-2">
+                                <select 
+                                  className="flex-1 h-10 bg-white border border-indigo-200 rounded-lg px-3 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100"
+                                  value={medResult?.logistics_partner_id || ""}
+                                  onChange={async (e) => {
+                                    const partnerId = e.target.value;
+                                    const { error } = await supabase
+                                      .from("prescriptions")
+                                      .update({ logistics_partner_id: partnerId })
+                                      .eq("id", medResult.id);
+                                    if (error) {
+                                      toast.error("Failed to assign partner");
+                                    } else {
+                                      toast.success("Logistics partner assigned!");
+                                      handleLookup(); // Refresh details
+                                    }
+                                  }}
+                                >
+                                  <option value="">Select Partner...</option>
+                                  {partners.filter(p => p.type === "logistics").map(lp => (
+                                    <option key={lp.id} value={lp.partner_id}>{lp.name}</option>
+                                  ))}
+                                </select>
+                                <div className="h-10 px-3 flex items-center justify-center bg-indigo-100 text-indigo-600 rounded-lg text-[10px] font-black uppercase tracking-wider">
+                                  {medResult?.logistics_partner_id ? "Assigned" : "Pending"}
+                                </div>
+                              </div>
+                            </div>
                           </>)}
                         </div>
                       </div>
@@ -1100,6 +1246,15 @@ const SuperAdminDashboard = () => {
                     <h3 className="font-black text-slate-900">Platform Users</h3>
                     <p className="text-xs text-slate-400">{platformUsers.length} total registered patients/users</p>
                   </div>
+                  <button onClick={() => downloadCSV(platformUsers, "Aaroksha_Users", [
+                    { header: "Name", key: "full_name" },
+                    { header: "Email", key: "email" },
+                    { header: "Phone", key: "phone" },
+                    { header: "Role", key: "role" },
+                    { header: "Joined On", key: "created_at" }
+                  ])} className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-xl font-bold text-xs transition-all">
+                    <Download className="h-3.5 w-3.5" /> Export Users
+                  </button>
                 </div>
                 <div className="divide-y divide-slate-50">
                   {platformUsers.map((user: PlatformUser) => (
@@ -1142,6 +1297,16 @@ const SuperAdminDashboard = () => {
                     <h3 className="font-black text-slate-900">All Partners</h3>
                     <p className="text-xs text-slate-400">{partners.length} registered partners</p>
                   </div>
+                  <button onClick={() => downloadCSV(partners, "Aaroksha_Partners", [
+                    { header: "Partner Name", key: "name" },
+                    { header: "Type", key: "type" },
+                    { header: "Status", key: "status" },
+                    { header: "Email", key: "email" },
+                    { header: "Phone", key: "phone" },
+                    { header: "Partner ID", key: "partner_id" }
+                  ])} className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-xl font-bold text-xs transition-all">
+                    <Download className="h-3.5 w-3.5" /> Export Partners
+                  </button>
                 </div>
                 <div className="divide-y divide-slate-50">
                   {partners.map(partner => {
@@ -1160,7 +1325,7 @@ const SuperAdminDashboard = () => {
                           <p className="text-xs text-slate-400 mt-0.5">{partner.email} · Commission: {partner.commission_type === "fixed" ? `₹${partner.commission_rate}/txn` : `${partner.commission_rate}%`}</p>
                         </div>
                         <div className="text-right shrink-0">
-                          <p className="text-[10px] text-slate-400 font-mono">{partner.partner_id.slice(0, 18)}…</p>
+                          <p className="text-[10px] text-slate-400 font-mono">{partner.partner_id.slice(0, 18)}...</p>
                           <p className="text-[10px] text-slate-300">{partner.phone || "No phone"}</p>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
@@ -1172,7 +1337,7 @@ const SuperAdminDashboard = () => {
                             className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all">
                             <Edit2 className="h-3.5 w-3.5" />
                           </button>
-                          <button onClick={() => handleDeletePartner(partner.id)}
+                          <button onClick={() => handleDeletePartner(partner)}
                             className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
@@ -1208,50 +1373,17 @@ const SuperAdminDashboard = () => {
             });
             const totalPayable = payoutRows.reduce((s, r) => s + r.netPayable, 0);
 
-            const exportToPDF = () => {
-              const doc = new jsPDF();
-              
-              doc.setFontSize(16);
-              doc.text("Aaroksha Platform Payout Report", 14, 20);
-              
-              doc.setFontSize(10);
-              const filterLabel = dateFilter === "all" ? "All Time" : dateFilter === "custom" ? `${customDate.start} to ${customDate.end}` : dateFilter.toUpperCase();
-              doc.text(`Generated: ${new Date().toLocaleDateString()} | Filter: ${filterLabel}`, 14, 28);
-              
-              const tableColumn = ["Partner", "Type", "Txns", "Earned (INR)", "Plat. Fee", "Comm.", "Net Payable"];
-              const tableRows = payoutRows.map(r => [
-                r.name,
-                r.type.toUpperCase(),
-                r.txnCount.toString(),
-                r.earned.toLocaleString("en-IN"),
-                `- ${r.platFees.toLocaleString("en-IN")}`,
-                `- ${r.commission.toLocaleString("en-IN")}`,
-                `${r.netPayable.toLocaleString("en-IN")}`
-              ]);
-
-              autoTable(doc, {
-                head: [tableColumn],
-                body: tableRows,
-                startY: 35,
-                theme: 'grid',
-                headStyles: { fillColor: [15, 23, 42], textColor: 255 },
-                styles: { fontSize: 8, cellPadding: 3 },
-                columnStyles: {
-                  3: { halign: 'right' },
-                  4: { halign: 'right', textColor: [217, 119, 6] },
-                  5: { halign: 'right', textColor: [220, 38, 38] },
-                  6: { halign: 'right', fontStyle: 'bold', textColor: [5, 150, 105] }
-                }
-              });
-
-              // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-              // @ts-ignore
-              const finalY = doc.lastAutoTable?.finalY || 40;
-              doc.setFontSize(12);
-              doc.text(`Total Aggregated Payouts: Rs ${totalPayable.toLocaleString("en-IN")}`, 14, finalY + 15);
-              
-              doc.save(`Aaroksha_Payouts_${dateFilter}.pdf`);
-              toast.success("PDF Report generated successfully!");
+            const exportToCSV = () => {
+              const columns = [
+                { header: "Partner Name", key: "name" },
+                { header: "Service Type", key: "type" },
+                { header: "Transaction Count", key: "txnCount" },
+                { header: "Gross Earned (INR)", key: "earned" },
+                { header: "Net Payable (INR)", key: "netPayable" },
+                { header: "Platform Commission", key: "commission" },
+                { header: "Platform Fees", key: "platFees" }
+              ];
+              downloadCSV(payoutRows, "Aaroksha_Payouts", columns);
             };
 
             return (
@@ -1282,8 +1414,8 @@ const SuperAdminDashboard = () => {
                     <p className="text-4xl font-black text-white">₹{totalPayable.toLocaleString("en-IN")}</p>
                     <p className="text-slate-500 text-sm mt-1">Net of commission & platform fees · {payoutRows.length} partners</p>
                   </div>
-                  <button onClick={exportToPDF} className="flex items-center gap-2 bg-white text-slate-900 px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-slate-100 transition-all">
-                    <Download className="h-4 w-4" /> Export PDF
+                  <button onClick={exportToCSV} className="flex items-center gap-2 bg-white text-slate-900 px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-slate-100 transition-all">
+                    <Download className="h-4 w-4" /> Export CSV
                   </button>
                 </div>
 
@@ -1490,11 +1622,24 @@ const SuperAdminDashboard = () => {
           {/* ── TRANSACTIONS ──────────────────────────────────────────── */}
           {activeTab === "transactions" && (
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-50">
-                <h3 className="font-black text-slate-900">All Platform Transactions</h3>
-                <p className="text-xs text-slate-400">{filteredAppointments.length + filteredPrescriptions.length + filteredLabBookings.length} total transactions in this period</p>
+              <div className="px-6 py-4 border-b border-slate-50 flex items-center justify-between">
+                <div>
+                  <h3 className="font-black text-slate-900">All Platform Transactions</h3>
+                  <p className="text-xs text-slate-400">{filteredAppointments.length + filteredPrescriptions.length + filteredLabBookings.length} total transactions in this period</p>
+                </div>
+                <button onClick={() => downloadCSV(liveFeed, "Aaroksha_Transactions", [
+                  { header: "Patient Name", key: "patient_name" },
+                  { header: "Type", key: "feedType" },
+                  { header: "Order ID", key: "order_id" },
+                  { header: "Amount", key: "grand_total" },
+                  { header: "Status", key: "status" },
+                  { header: "Payment", key: "payment_status" },
+                  { header: "Date", key: "timestamp" }
+                ])} className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-xl font-bold text-xs transition-all hover:bg-slate-800">
+                  <Download className="h-3.5 w-3.5" /> Export All
+                </button>
               </div>
-              <div className="divide-y divide-slate-50 max-h-[600px] overflow-y-auto">
+              <div className="divide-y divide-slate-50 max-h-[600px] overflow-y-auto scrollbar-hide">
                 {liveFeed.map((item, idx) => (
                   <div key={idx} className="px-6 py-3.5 flex items-center gap-3 hover:bg-slate-50/50 transition-colors">
                     <div className={`h-8 w-8 ${TYPE_META[item.feedType]?.bg} rounded-lg flex items-center justify-center ${TYPE_META[item.feedType]?.color}`}>
@@ -1545,7 +1690,7 @@ const SuperAdminDashboard = () => {
 
               {/* Live Preview */}
               <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Live Preview — Slide {bannerPreviewIdx + 1} of {platformBanners.length}</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Live Preview - Slide {bannerPreviewIdx + 1} of {platformBanners.length}</p>
                 {platformBanners[bannerPreviewIdx] && (() => {
                   const b = platformBanners[bannerPreviewIdx];
                   const isImageOnly = !!(b.image && b.imageOnly);
@@ -1657,130 +1802,113 @@ const SuperAdminDashboard = () => {
 
                     {/* Expanded editor (only for selected) */}
                     {index === bannerPreviewIdx && (
-                      <div className="px-5 pb-5 border-t border-slate-50 pt-4">
+                      <div className="px-5 pb-5 border-t border-slate-50 pt-5">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
 
-                          {/* Left: Image / Gradient */}
-                          <div className="space-y-4">
-                            <div>
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5 flex items-center gap-1.5"><ImagePlus className="h-3 w-3" /> Banner Image</label>
-                              <div
-                                className="w-full aspect-[16/9] rounded-xl overflow-hidden relative flex items-center justify-center border-2 border-dashed border-slate-200 group cursor-pointer"
-                                style={{ background: banner.image ? "none" : banner.gradient }}
-                                onClick={() => {
-                                  const input = document.createElement("input");
-                                  input.type = "file"; input.accept = "image/*";
-                                  input.onchange = (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) handleBannerUpload(banner.id, f); };
-                                  input.click();
-                                }}
-                              >
-                                {banner.image ? (
-                                  <img src={banner.image} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                  <div className="text-center">
-                                    <div className="text-4xl mb-1">{banner.emoji}</div>
-                                    <p className="text-white/80 text-[10px] font-bold">Click to upload image</p>
-                                  </div>
-                                )}
-                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1">
-                                  <ImagePlus className="h-6 w-6 text-white" />
-                                  <span className="text-white text-xs font-bold">Upload / Replace</span>
-                                </div>
-                              </div>
-                              {banner.image && (
+                          {/* Left: Image Upload */}
+                          <div className="space-y-3">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block flex items-center gap-1.5">
+                              <ImagePlus className="h-3 w-3" /> Banner Image
+                            </label>
+                            <p className="text-xs text-slate-400 -mt-2">
+                              Upload an image from your device. It will display exactly as-is on the homepage - no text overlay.
+                            </p>
+
+                            {/* Upload Box */}
+                            <div
+                              className="w-full aspect-[16/9] rounded-2xl overflow-hidden relative border-2 border-dashed border-blue-200 cursor-pointer group bg-slate-50 hover:border-blue-400 transition-all"
+                              onClick={() => {
+                                const input = document.createElement("input");
+                                input.type = "file"; input.accept = "image/*";
+                                input.onchange = (e) => {
+                                  const f = (e.target as HTMLInputElement).files?.[0];
+                                  if (f) handleBannerUpload(banner.id, f);
+                                };
+                                input.click();
+                              }}
+                            >
+                              {banner.image ? (
                                 <>
-                                  <button onClick={() => handleUpdateBanner(banner.id, "image", "")}
-                                    className="mt-2 w-full flex items-center justify-center gap-1.5 text-red-500 hover:text-red-600 text-xs font-bold py-1.5 border border-red-100 rounded-xl hover:bg-red-50 transition-all">
-                                    <Trash2 className="h-3 w-3" /> Remove Image (use gradient)
-                                  </button>
-                                  {/* Image-Only toggle */}
-                                  <div className="mt-3 flex items-center justify-between bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
-                                    <div>
-                                      <p className="text-xs font-black text-slate-700">Show Image As-Is</p>
-                                      <p className="text-[10px] text-slate-400 mt-0.5">Display only the image — no text, no overlay</p>
-                                    </div>
-                                    <button
-                                      onClick={() => {
-                                        const updated = platformBanners.map(b => b.id === banner.id ? { ...b, imageOnly: !b.imageOnly } : b);
-                                        persistBanners(updated);
-                                      }}
-                                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 ml-3 ${
-                                        banner.imageOnly ? "bg-blue-600" : "bg-slate-200"
-                                      }`}
-                                    >
-                                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                                        banner.imageOnly ? "translate-x-6" : "translate-x-1"
-                                      }`} />
-                                    </button>
+                                  <img src={banner.image} alt="Banner" className="w-full h-full object-cover" />
+                                  {/* Hover overlay */}
+                                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2">
+                                    <ImagePlus className="h-7 w-7 text-white" />
+                                    <span className="text-white text-xs font-black">Replace Image</span>
                                   </div>
                                 </>
+                              ) : (
+                                <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-slate-400">
+                                  <div className="h-14 w-14 rounded-2xl bg-blue-100 flex items-center justify-center">
+                                    <ImagePlus className="h-7 w-7 text-blue-500" />
+                                  </div>
+                                  <div className="text-center">
+                                    <p className="text-sm font-black text-slate-600">Click to upload image</p>
+                                    <p className="text-xs text-slate-400 mt-1">JPG, PNG, WebP supported</p>
+                                  </div>
+                                </div>
                               )}
                             </div>
 
-                            <div>
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5 flex items-center gap-1.5"><Palette className="h-3 w-3" /> Background Gradient (CSS)</label>
-                              <input value={banner.gradient} onChange={e => handleUpdateBanner(banner.id, "gradient", e.target.value)}
-                                className="w-full h-11 text-xs font-mono rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-400 transition-all px-3" />
-                              <div className="flex gap-1.5 mt-2 flex-wrap">
-                                {[
-                                  "linear-gradient(135deg,#1e3a8a 0%,#2563eb 100%)",
-                                  "linear-gradient(135deg,#7c3aed 0%,#a78bfa 100%)",
-                                  "linear-gradient(135deg,#059669 0%,#34d399 100%)",
-                                  "linear-gradient(135deg,#dc2626 0%,#f87171 100%)",
-                                  "linear-gradient(135deg,#d97706 0%,#fbbf24 100%)",
-                                  "linear-gradient(135deg,#0f172a 0%,#334155 100%)",
-                                ].map(g => (
-                                  <button key={g} onClick={() => handleUpdateBanner(banner.id, "gradient", g)}
-                                    className="h-6 w-10 rounded-md border-2 border-white shadow-sm hover:scale-110 transition-transform"
-                                    style={{ background: g, outline: banner.gradient === g ? "2px solid #2563eb" : "none", outlineOffset: "2px" }} />
-                                ))}
-                              </div>
-                            </div>
+                            {/* Remove image button */}
+                            {banner.image && (
+                              <button
+                                onClick={() => {
+                                  const updated = platformBanners.map(b =>
+                                    b.id === banner.id ? { ...b, image: "", imageOnly: false } : b
+                                  );
+                                  persistBanners(updated);
+                                }}
+                                className="w-full flex items-center justify-center gap-1.5 text-red-500 hover:text-red-600 text-xs font-bold py-2 border border-red-100 rounded-xl hover:bg-red-50 transition-all"
+                              >
+                                <Trash2 className="h-3 w-3" /> Remove Image
+                              </button>
+                            )}
 
-                            <div className="grid grid-cols-3 gap-3">
-                              <div className="col-span-2">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Emoji</label>
-                                <input value={banner.emoji} onChange={e => handleUpdateBanner(banner.id, "emoji", e.target.value)}
-                                  className="w-full h-11 text-xl text-center rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-400 transition-all" />
+                            {banner.image && (
+                              <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center gap-2">
+                                <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />
+                                <p className="text-xs font-bold text-emerald-700">
+                                  Image uploaded - shows exactly as-is on the homepage
+                                </p>
                               </div>
-                              <div>
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">CTA Color</label>
-                                <input type="color" value={banner.ctaColor || "#2563eb"} onChange={e => handleUpdateBanner(banner.id, "ctaColor", e.target.value)}
-                                  className="w-full h-11 rounded-xl border border-slate-200 cursor-pointer p-1" />
-                              </div>
-                            </div>
+                            )}
                           </div>
 
-                          {/* Right: Text content */}
+                          {/* Right: Just the link */}
                           <div className="space-y-4">
                             <div>
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Title <span className="normal-case text-slate-300">(\n for line break)</span></label>
-                              <textarea rows={2} value={banner.title} onChange={e => handleUpdateBanner(banner.id, "title", e.target.value)}
-                                className="w-full text-sm font-bold rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-400 transition-all p-3" />
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">
+                                Banner Label (for admin reference)
+                              </label>
+                              <input
+                                value={banner.title}
+                                onChange={e => handleUpdateBanner(banner.id, "title", e.target.value)}
+                                placeholder="e.g. Lab Test Promo"
+                                className="w-full h-11 text-sm rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-400 transition-all px-3"
+                              />
+                              <p className="text-[10px] text-slate-400 mt-1">Used as alt text and admin label - not shown on homepage image</p>
                             </div>
+
                             <div>
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Subtitle</label>
-                              <input value={banner.subtitle} onChange={e => handleUpdateBanner(banner.id, "subtitle", e.target.value)}
-                                className="w-full h-11 text-sm rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-400 transition-all px-3" />
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div>
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">CTA Button Text</label>
-                                <input value={banner.cta} onChange={e => handleUpdateBanner(banner.id, "cta", e.target.value)}
-                                  className="w-full h-11 text-sm font-black rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-400 transition-all px-3" />
-                              </div>
-                              <div>
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Badge Text</label>
-                                <input value={banner.badge} onChange={e => handleUpdateBanner(banner.id, "badge", e.target.value)}
-                                  className="w-full h-11 text-sm font-black rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-400 transition-all px-3" />
-                              </div>
-                            </div>
-                            <div>
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5 flex items-center gap-1.5"><Link2 className="h-3 w-3" /> Link / Route</label>
-                              <input value={banner.to} onChange={e => handleUpdateBanner(banner.id, "to", e.target.value)}
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5 flex items-center gap-1.5">
+                                <Link2 className="h-3 w-3" /> Link When Clicked
+                              </label>
+                              <input
+                                value={banner.to}
+                                onChange={e => handleUpdateBanner(banner.id, "to", e.target.value)}
                                 placeholder="e.g. /doctors or /lab-tests"
-                                className="w-full h-11 text-sm font-mono text-blue-600 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-400 transition-all px-3" />
-                              <p className="text-[10px] text-slate-400 mt-1">Where the banner navigates when clicked</p>
+                                className="w-full h-11 text-sm font-mono text-blue-600 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-400 transition-all px-3"
+                              />
+                              <p className="text-[10px] text-slate-400 mt-1">Where is the customer taken when they tap this banner?</p>
+                            </div>
+
+                            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-1.5">
+                              <p className="text-xs font-black text-blue-800">📸 How It Works</p>
+                              <p className="text-[11px] text-blue-600 leading-relaxed">
+                                1. Upload an image designed at any size (we recommend 1200×500px)<br/>
+                                2. The image shows exactly as-is - no text overlay, no modifications<br/>
+                                3. Click "Add Banner" to add another slide to the carousel
+                              </p>
                             </div>
                           </div>
                         </div>
@@ -1791,6 +1919,7 @@ const SuperAdminDashboard = () => {
               </div>
             </div>
           )}
+
 
           {/* ── SETTINGS ──────────────────────────────────────────────── */}
           {activeTab === "settings" && (
@@ -1875,6 +2004,21 @@ const SuperAdminDashboard = () => {
                         <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${toggles.upi ? "translate-x-6" : "translate-x-1"}`} />
                       </button>
                     </div>
+                    {toggles.upi && (
+                      <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">
+                          UPI ID <span className="text-slate-300 font-normal normal-case tracking-normal">(shown to customers)</span>
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. aaroksha@upi"
+                          value={(toggles as any).upi_id || ""}
+                          onChange={e => setToggles(p => ({ ...p, upi_id: e.target.value }))}
+                          className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-3 text-sm font-medium text-slate-700 outline-none focus:border-blue-300 transition-all shadow-sm"
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1">Patients copy this UPI ID to pay manually until the gateway is integrated.</p>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-bold text-slate-700">Cash on Delivery (COD)</span>
                       <button onClick={() => setToggles(p => ({ ...p, cod: !p.cod }))} 
@@ -1969,8 +2113,8 @@ const SuperAdminDashboard = () => {
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {logisticPartners.map(p => {
-                      const assigned = deliveryOrders.filter(o => (o as any).assigned_partner_id === p.partner_id).length;
-                      const done     = deliveryOrders.filter(o => (o as any).assigned_partner_id === p.partner_id && o.status === "completed").length;
+                      const assigned = deliveryOrders.filter(o => (o as any).logistics_partner_id === p.partner_id).length;
+                      const done     = deliveryOrders.filter(o => (o as any).logistics_partner_id === p.partner_id && o.status === "completed").length;
                       const pending  = assigned - done;
                       return (
                         <div key={p.id} className="bg-slate-50 rounded-2xl border border-slate-200 p-4">
@@ -1980,7 +2124,14 @@ const SuperAdminDashboard = () => {
                             </div>
                             <div>
                               <p className="font-black text-slate-800 text-sm">{p.name}</p>
-                              <p className="text-[10px] text-slate-400">{p.phone || p.email}</p>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <p className="text-[10px] text-slate-400">{p.phone || p.email}</p>
+                                {p.category && (
+                                  <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md ${p.category === 'lab' ? 'bg-violet-50 text-violet-600 border border-violet-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}>
+                                    {p.category}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                             <span className="ml-auto text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full bg-emerald-50 text-emerald-600">Active</span>
                           </div>
@@ -2043,14 +2194,14 @@ const SuperAdminDashboard = () => {
                 <div className="divide-y divide-slate-50">
                   {deliveryOrders
                     .filter(o => {
-                      if (logisticsFilter === "unassigned") return !(o as any).assigned_partner_id;
+                      if (logisticsFilter === "unassigned") return !(o as any).logistics_partner_id;
                       if (logisticsFilter === "dispatched") return o.status === "dispatched" || o.status === "reviewed";
                       if (logisticsFilter === "completed")  return o.status === "completed";
                       return true;
                     })
                     .map(order => {
                       const meds = Array.isArray(order.medicines) ? order.medicines : [];
-                      const assignedPartner = logisticPartners.find(p => p.partner_id === (order as any).assigned_partner_id);
+                      const assignedPartner = logisticPartners.find(p => p.partner_id === (order as any).logistics_partner_id);
                       const statusCfg: Record<string, { cls: string; dot: string; label: string }> = {
                         reviewed:   { cls: "bg-blue-50 text-blue-700",    dot: "bg-blue-500",   label: "Awaiting Dispatch" },
                         dispatched: { cls: "bg-amber-50 text-amber-700",  dot: "bg-amber-500",  label: "Out for Delivery" },
@@ -2093,7 +2244,7 @@ const SuperAdminDashboard = () => {
                                   <span className="truncate max-w-[200px]">{order.delivery_address || "No address"}</span>
                                 </span>
                                 <span>·</span>
-                                <span>📞 {order.patient_phone || "—"}</span>
+                                <span>📞 {order.patient_phone || "-"}</span>
                                 {meds.length > 0 && (
                                   <><span>·</span><span>💊 {meds.filter(m => m.available).length} item(s)</span></>
                                 )}
@@ -2114,25 +2265,28 @@ const SuperAdminDashboard = () => {
                                       {assignedPartner.name}
                                     </span>
                                   )}
-                                  <select
-                                    value={(order as any).assigned_partner_id || ""}
-                                    onChange={e => {
-                                      const pid = e.target.value;
-                                      const pname = logisticPartners.find(p => p.partner_id === pid)?.name || "";
-                                      if (pid) handleAssignPartner(order.id, pid, pname);
-                                    }}
-                                    disabled={assigningId === order.id}
-                                    className={`h-9 pl-3 pr-7 rounded-xl border text-xs font-bold focus:outline-none transition-all ${
-                                      assignedPartner
-                                        ? "bg-indigo-50 border-indigo-200 text-indigo-700"
-                                        : "bg-amber-50 border-amber-200 text-amber-700"
-                                    }`}
-                                  >
-                                    <option value="">{assignedPartner ? "Reassign…" : "Assign Partner"}</option>
-                                    {logisticPartners.map(p => (
-                                      <option key={p.id} value={p.partner_id}>{p.name}</option>
-                                    ))}
-                                  </select>
+                                    <select
+                                      value={(order as any).logistics_partner_id || ""}
+                                      onChange={e => {
+                                        const pid = e.target.value;
+                                        const pname = logisticPartners.find(p => p.partner_id === pid)?.name || "";
+                                        if (pid) handleAssignPartner(order.id, pid, pname, (order as any).type);
+                                      }}
+                                      disabled={assigningId === order.id}
+                                      className={`h-9 pl-3 pr-7 rounded-xl border text-xs font-bold focus:outline-none transition-all ${
+                                        assignedPartner
+                                          ? "bg-indigo-50 border-indigo-200 text-indigo-700"
+                                          : "bg-amber-50 border-amber-200 text-amber-700"
+                                      }`}
+                                    >
+                                      <option value="">{assignedPartner ? "Reassign..." : "Assign Partner"}</option>
+                                      {logisticPartners
+                                        .filter(p => !p.category || p.category === (order as any).type)
+                                        .map(p => (
+                                          <option key={p.id} value={p.partner_id}>{p.name}</option>
+                                        ))
+                                      }
+                                    </select>
                                   {assigningId === order.id && (
                                     <Loader2 className="h-4 w-4 text-indigo-400 animate-spin" />
                                   )}
@@ -2186,11 +2340,11 @@ const SuperAdminDashboard = () => {
               </button>
             </div>
 
-            <div className="p-8 space-y-5 max-h-[70vh] overflow-y-auto">
+            <div className="p-8 space-y-5 max-h-[70vh] overflow-y-auto scrollbar-hide">
               {/* Partner Type */}
               <div>
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Partner Type</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-4 gap-2">
                   {(["hospital", "lab", "pharmacy", "logistics"] as const).map(t => {
                     const meta = getMeta(t);
                     const active = (editingPartner?.type ?? newPartner.type) === t;
@@ -2199,7 +2353,7 @@ const SuperAdminDashboard = () => {
                         if (editingPartner) setEditingPartner({ ...editingPartner, type: t });
                         else setNewPartner(p => ({ ...p, type: t, commission_rate: COMMISSION_DEFAULTS[t] || 10 }));
                       }}
-                        className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border-2 text-xs font-bold transition-all ${active ? `${meta.bg} ${meta.border} ${meta.color}` : "border-slate-200 text-slate-500 hover:border-slate-300"}`}>
+                        className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border-2 text-[10px] font-bold transition-all ${active ? `${meta.bg} ${meta.border} ${meta.color}` : "border-slate-200 text-slate-500 hover:border-slate-300"}`}>
                         {meta.icon}
                         <span>{meta.label}</span>
                       </button>
@@ -2207,6 +2361,45 @@ const SuperAdminDashboard = () => {
                   })}
                 </div>
               </div>
+
+              {/* Logistics Category (Only if Logistics type is selected) */}
+              {((editingPartner?.type ?? newPartner.type) === "logistics") && (
+                <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4 animate-in fade-in slide-in-from-top-2">
+                  <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest block mb-3">Logistics Specialization</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { id: 'lab', label: 'Lab Sample Collection', icon: <FlaskConical className="h-4 w-4" /> },
+                      { id: 'pharmacy', label: 'Pharmacy Delivery', icon: <Pill className="h-4 w-4" /> }
+                    ].map(cat => {
+                      const active = (editingPartner?.category ?? newPartner.category) === cat.id;
+                      return (
+                        <button 
+                          key={cat.id}
+                          onClick={() => {
+                            if (editingPartner) setEditingPartner({ ...editingPartner, category: cat.id as any });
+                            else setNewPartner(p => ({ ...p, category: cat.id as any }));
+                          }}
+                          className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all ${
+                            active 
+                              ? "bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-100" 
+                              : "bg-white border-slate-200 text-slate-500 hover:border-indigo-300"
+                          }`}
+                        >
+                          <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${active ? "bg-white/20" : "bg-slate-100 text-slate-400"}`}>
+                            {cat.icon}
+                          </div>
+                          <div className="text-left">
+                            <p className="text-[10px] font-black leading-tight">{cat.label}</p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-indigo-400 mt-3 font-medium italic">
+                    * This partner will only see and manage orders related to their selected specialization.
+                  </p>
+                </div>
+              )}
 
               {/* Fields */}
               {[
@@ -2284,6 +2477,25 @@ const SuperAdminDashboard = () => {
                       else setNewPartner(p => ({ ...p, commission_rate: v }));
                     }}
                     className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm font-black text-slate-700 outline-none focus:border-blue-300 transition-all" />
+                </div>
+              </div>
+
+              {/* Settlement Cycle */}
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Settlement Cycle</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {(["today", "daily", "weekly", "monthly"] as const).map(c => {
+                    const active = (editingPartner?.settlement_cycle ?? newPartner.settlement_cycle) === c;
+                    return (
+                      <button key={c} onClick={() => {
+                        if (editingPartner) setEditingPartner({ ...editingPartner, settlement_cycle: c });
+                        else setNewPartner(p => ({ ...p, settlement_cycle: c }));
+                      }}
+                        className={`py-2.5 rounded-xl border-2 text-[10px] font-black uppercase tracking-wider transition-all ${active ? `bg-slate-900 border-slate-900 text-white` : "border-slate-200 text-slate-400 hover:border-slate-300"}`}>
+                        {c}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

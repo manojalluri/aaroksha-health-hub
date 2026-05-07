@@ -15,6 +15,8 @@ interface Profile {
   name: string;
   phone: string;
   address: string;
+  town: string;
+  pincode: string;
   email: string;
 }
 
@@ -31,6 +33,7 @@ interface Appointment {
   appointment_time: string;
   status: string;
   created_at: string;
+  verification_code?: string;
   doctors?: DoctorInfo;
 }
 
@@ -55,6 +58,8 @@ interface LabBooking {
   total_amount: number;
   appointment_date?: string;
   status: string;
+  payment_status?: string;
+  collection_code?: string;
   created_at: string;
 }
 
@@ -129,19 +134,41 @@ const ProfilePage = () => {
 
   const [profile, setProfile] = useState<Profile>(() => {
     const saved = localStorage.getItem("aaroksha_profile");
-    return saved ? JSON.parse(saved) : { name: "", phone: "", address: "", email: "" };
+    return saved ? JSON.parse(saved) : { name: "", phone: "", address: "", town: "", pincode: "", email: "" };
   });
 
   useEffect(() => {
     if (!authLoading && !user) {
       navigate("/auth");
+      return;
     }
-    if (user && !profile.name) {
-      setProfile({
-        name: user.user_metadata?.full_name || "",
-        phone: user.user_metadata?.phone_number || "",
-        email: user.email || "",
-        address: profile.address || ""
+    if (user) {
+      // Load from Supabase profiles table
+      supabase.from("profiles").select("*").eq("id", user.id).single().then(({ data }) => {
+        if (data) {
+          const p: Profile = {
+            name:    data.full_name || user.user_metadata?.full_name || "",
+            phone:   data.phone    || user.user_metadata?.phone_number || "",
+            email:   data.email    || user.email || "",
+            address: data.address  || "",
+            town:    data.town     || "",
+            pincode: data.pincode  || "",
+          };
+          setProfile(p);
+          setDraft(p);
+          localStorage.setItem("aaroksha_profile", JSON.stringify(p));
+          if (p.phone) fetchBookings(p.phone);
+        } else {
+          // Fallback: pre-fill from auth metadata
+          const p: Profile = {
+            name:    user.user_metadata?.full_name || "",
+            phone:   user.user_metadata?.phone_number || "",
+            email:   user.email || "",
+            address: "", town: "", pincode: "",
+          };
+          setProfile(p);
+          setDraft(p);
+        }
       });
     }
   }, [user, authLoading]);
@@ -153,8 +180,8 @@ const ProfilePage = () => {
   const [loading, setLoading] = useState(false);
   const [payingId, setPayingId] = useState<string | null>(null);
 
-  // Save profile to localStorage
-  const saveProfile = () => {
+  // Save profile to Supabase + localStorage
+  const saveProfile = async () => {
     if (!draft.name || !draft.phone) {
       toast.error("Name and phone are required");
       return;
@@ -162,8 +189,29 @@ const ProfilePage = () => {
     setProfile(draft);
     localStorage.setItem("aaroksha_profile", JSON.stringify(draft));
     setEditing(false);
-    toast.success("Profile saved!");
-    // Fetch bookings after profile is set
+    // Persist to Supabase profiles table
+    if (user) {
+      try {
+        const { error } = await supabase.from("profiles").upsert({
+          id:        user.id,
+          full_name: draft.name,
+          phone:     draft.phone,
+          email:     draft.email,
+          address:   draft.address,
+          town:      (draft as any).town    || "",
+          pincode:   (draft as any).pincode || "",
+        }, { onConflict: "id" });
+        
+        if (error) throw error;
+        toast.success("Profile saved!");
+      } catch (err: any) {
+        console.error("Save error:", err);
+        toast.error("Failed to save profile: " + (err?.message || "Network error"));
+        return; // Don't proceed to fetchBookings if save failed
+      }
+    } else {
+      toast.success("Profile saved locally!");
+    }
     fetchBookings(draft.phone);
   };
 
@@ -175,16 +223,29 @@ const ProfilePage = () => {
   const fetchBookings = async (phone: string) => {
     if (!phone) return;
     setLoading(true);
+    const cleanPhone = phone.trim();
     try {
       const [apptRes, labRes, rxRes] = await Promise.all([
-        supabase.from("appointments").select("*, doctors(name, specialty)").eq("patient_phone", phone).order("created_at", { ascending: false }),
-        supabase.from("lab_bookings").select("*").eq("patient_phone", phone).order("created_at", { ascending: false }),
-        supabase.from("prescriptions").select("*").eq("patient_phone", phone).order("created_at", { ascending: false }),
+        supabase.from("appointments").select("*, doctors(name, specialty)").eq("patient_phone", cleanPhone).order("created_at", { ascending: false }),
+        supabase.from("lab_bookings").select("*").eq("patient_phone", cleanPhone).order("created_at", { ascending: false }),
+        // For prescriptions, we check both phone and user_id if available
+        user?.id 
+          ? supabase.from("prescriptions").select("*").or(`patient_phone.eq.${cleanPhone},user_id.eq.${user.id}`).order("created_at", { ascending: false })
+          : supabase.from("prescriptions").select("*").eq("patient_phone", cleanPhone).order("created_at", { ascending: false }),
       ]);
-      if (apptRes.data) setAppointments(apptRes.data);
+      
+      // Fallback for appointments if join failed (data might be null if join errored)
+      if (apptRes.error) {
+        const { data: simpleAppts } = await supabase.from("appointments").select("*").eq("patient_phone", cleanPhone).order("created_at", { ascending: false });
+        if (simpleAppts) setAppointments(simpleAppts);
+      } else if (apptRes.data) {
+        setAppointments(apptRes.data);
+      }
+
       if (labRes.data) setLabBookings(labRes.data);
       if (rxRes.data) setPrescriptions(rxRes.data);
-    } catch {
+    } catch (err) {
+      console.error("Fetch error:", err);
       toast.error("Could not fetch booking history");
     } finally {
       setLoading(false);
@@ -314,17 +375,19 @@ const ProfilePage = () => {
               <div className="space-y-3">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Edit Profile</p>
                 {[
-                  { label: "Full Name *", key: "name", placeholder: "Your full name", icon: User },
-                  { label: "Phone Number *", key: "phone", placeholder: "+91 XXXXX XXXXX", icon: Phone },
-                  { label: "Delivery Address", key: "address", placeholder: "Home / flat address", icon: MapPin },
-                  { label: "Email Address", key: "email", placeholder: "email@example.com", icon: User },
+                  { label: "Full Name *",       key: "name",    placeholder: "Your full name",       icon: User    },
+                  { label: "Phone Number *",    key: "phone",   placeholder: "+91 XXXXX XXXXX",      icon: Phone   },
+                  { label: "Delivery Address",  key: "address", placeholder: "Street / flat / area", icon: MapPin  },
+                  { label: "Town / City",       key: "town",    placeholder: "e.g. Bhimavaram",      icon: MapPin  },
+                  { label: "PIN Code",          key: "pincode", placeholder: "e.g. 534201",          icon: MapPin  },
+                  { label: "Email Address",     key: "email",   placeholder: "email@example.com",    icon: User    },
                 ].map(({ label, key, placeholder, icon: Icon }) => (
                   <div key={key}>
                     <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 block">{label}</label>
                     <div className="relative">
                       <Icon className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
                       <input
-                        value={draft[key as keyof Profile]}
+                        value={(draft as any)[key] || ""}
                         onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
                         placeholder={placeholder}
                         className="w-full h-10 rounded-xl bg-slate-50 border border-slate-200 pl-9 pr-3 text-sm text-slate-700 placeholder:text-slate-300 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition-all"
@@ -433,6 +496,28 @@ const ProfilePage = () => {
                         </div>
                         <p className="text-[9px] font-bold text-slate-300 ml-auto">#{appt.id.slice(0, 8).toUpperCase()}</p>
                       </div>
+                      
+                      {/* Verification Code Display */}
+                      {appt.verification_code && (appt.status === 'confirmed') && (
+                        <div className="mt-3 bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center justify-between">
+                          <div>
+                            <p className="text-[9px] font-black uppercase tracking-widest text-blue-600 mb-0.5">Verification Code</p>
+                            <p className="text-sm font-black tracking-widest text-blue-800">{appt.verification_code}</p>
+                          </div>
+                          <p className="text-[10px] text-blue-600 max-w-[120px] leading-tight">
+                            Share this code at the hospital reception.
+                          </p>
+                        </div>
+                      )}
+                      {appt.verification_code && (appt.status === 'completed') && (
+                        <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center justify-between">
+                          <div>
+                            <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600 mb-0.5">Verification Code</p>
+                            <p className="text-sm font-black tracking-widest text-emerald-800">{appt.verification_code} ✓</p>
+                          </div>
+                          <p className="text-[10px] font-bold text-emerald-600">Consultation Completed</p>
+                        </div>
+                      )}
                     </div>
                   ))
                 )}
@@ -472,6 +557,28 @@ const ProfilePage = () => {
                           </div>
                           <p className="font-black text-purple-600 text-sm">₹{booking.total_amount}</p>
                         </div>
+                        
+                        {/* Collection Code Display */}
+                        {booking.collection_code && (booking.status === 'confirmed' || booking.status === 'processing') && (
+                          <div className="mt-3 bg-violet-50 border border-violet-200 rounded-xl p-3 flex items-center justify-between">
+                            <div>
+                              <p className="text-[9px] font-black uppercase tracking-widest text-violet-600 mb-0.5">Collection Code</p>
+                              <p className="text-sm font-black tracking-widest text-violet-800">{booking.collection_code}</p>
+                            </div>
+                            <p className="text-[10px] text-violet-600 max-w-[120px] leading-tight">
+                              Share this code with the lab technician.
+                            </p>
+                          </div>
+                        )}
+                        {booking.collection_code && (booking.status === 'collected' || booking.status === 'completed') && (
+                          <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center justify-between">
+                            <div>
+                              <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600 mb-0.5">Collection Code</p>
+                              <p className="text-sm font-black tracking-widest text-emerald-800">{booking.collection_code} ✓</p>
+                            </div>
+                            <p className="text-[10px] font-bold text-emerald-600">Sample Collected</p>
+                          </div>
+                        )}
                       </div>
                     );
                   })

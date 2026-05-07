@@ -1,58 +1,52 @@
-import { useState, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { verifyPartnerSession, clearAdminSession, revokePartnerSession } from "@/lib/adminAuth";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import {
-  Package, Search, Clock, CheckCircle2, Truck,
-  MapPin, Phone, RefreshCcw, User, ExternalLink,
-  ChevronRight, KeyRound, ShieldCheck, XCircle, AlertCircle, Loader2, LogOut
+  Truck, Search, CheckCircle, Package,
+  Phone, MapPin, BarChart3, Clock,
+  LogOut, Loader2, ClipboardList, FlaskConical, Map,
+  IndianRupee, Download, Menu, X
 } from "lucide-react";
+import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { verifyPartnerSession, clearAdminSession, revokePartnerSession, getPartnerIdFromSession } from "@/lib/adminAuth";
 
+// ─── Types ────────────────────────────────────────────────────────────────────
 interface DeliveryOrder {
   id: string;
   order_id?: string;
   patient_name: string;
   patient_phone: string;
   delivery_address: string;
-  status: string;
-  medicines?: Array<{ name: string; dosage: string; qty: number; price: number; available: boolean }>;
-  grand_total: number;
-  sub_total?: number;
-  platform_fee?: number;
-  delivery_fee?: number;
-  payment_status?: string;
-  delivery_code?: string;
-  is_express_delivery?: boolean;
-  assigned_partner_id?: string;
   created_at: string;
+  status: string;
+  delivery_fee?: number;
+  delivery_code?: string;
+  type: 'prescription' | 'lab';
 }
 
-const STATUS_CFG: Record<string, { label: string; cls: string; dot: string }> = {
-  reviewed:   { label: "Awaiting Dispatch", cls: "bg-blue-100 text-blue-700", dot: "bg-blue-500" },
-  dispatched: { label: "Out for Delivery", cls: "bg-amber-100 text-amber-700", dot: "bg-amber-500" },
-  completed:  { label: "Delivered",        cls: "bg-emerald-100 text-emerald-700", dot: "bg-emerald-500" },
-};
-
-const StatusBadge = ({ status }: { status: string }) => {
-  const cfg = STATUS_CFG[status] ?? { label: status, cls: "bg-gray-100 text-gray-600", dot: "bg-gray-400" };
-  return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${cfg.cls}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
-      {cfg.label}
-    </span>
-  );
+// ─── Status helpers ────────────────────────────────────────────────────────────
+const statusStyle: Record<string, string> = {
+  pending:    "bg-amber-100 text-amber-700 border-amber-200",
+  confirmed:  "bg-blue-100 text-blue-700 border-blue-200",
+  dispatched: "bg-orange-100 text-orange-700 border-orange-200",
+  completed:  "bg-emerald-100 text-emerald-700 border-emerald-200",
+  collected:  "bg-violet-100 text-violet-700 border-violet-200",
+  processing: "bg-sky-100 text-sky-700 border-sky-200",
 };
 
 const LogisticsDashboard = () => {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const [partnerId, setPartnerId] = useState<string | null>(null);
-  const [partnerName, setPartnerName] = useState<string>("Delivery Partner");
+  const qc = useQueryClient();
   const [isVerifying, setIsVerifying] = useState(true);
 
-  // ─── SECURITY GUARD ────────────────────────────────────────────────────────
+  // ─── SECURITY GUARD ──────────────────────────────────────────────────────
   useEffect(() => {
     async function checkAuth() {
       const ok = await verifyPartnerSession("logistics");
@@ -60,328 +54,585 @@ const LogisticsDashboard = () => {
         toast.error("Unauthorized: Session expired or invalid");
         clearAdminSession();
         navigate("/admin/login/logistics");
-      } else {
-        const raw = localStorage.getItem("aaroksha_partner_session");
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw);
-            setPartnerId(parsed.partner_id);
-            setPartnerName(parsed.name || "Delivery Partner");
-          } catch {}
+        return;
+      }
+      
+      const pid = getPartnerIdFromSession();
+      if (pid) {
+        const { data: p } = await supabase.from("partners").select("*").eq("partner_id", pid).single();
+        if (p) {
+          setPartner(p);
+          if (p.category === "lab") {
+            setActiveTab("labs");
+          } else {
+            setActiveTab("prescriptions");
+          }
         }
       }
+
       setIsVerifying(false);
     }
     checkAuth();
   }, [navigate]);
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All");
-  const [codeInput, setCodeInput] = useState("");
-  const [codeError, setCodeError] = useState("");
-  const [verifying, setVerifying] = useState(false);
+  const [partner, setPartner] = useState<any>(null);
 
-  // ── Fetch orders ───────────────────────────────────────────────────────────
-  const { data: orders = [], isLoading } = useQuery<DeliveryOrder[]>({
-    queryKey: ["logistics-orders", partnerId],
+  const [search, setSearch] = useState("");
+  const [activeTab, setActiveTab] = useState("prescriptions");
+  const [selectedOrder, setSelectedOrder] = useState<DeliveryOrder | null>(null);
+  
+  // OTP Verification state
+  const [verifyingOrder, setVerifyingOrder] = useState<DeliveryOrder | null>(null);
+  const [otpInput, setOtpInput] = useState("");
+  const [historyFilter, setHistoryFilter] = useState("all");
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // ─── Fetch data from Supabase ───────────────────────────────────
+  const { data: prescriptions = [], isLoading: loadingRx } = useQuery<DeliveryOrder[]>({
+    queryKey: ["logistics-prescriptions", partner?.partner_id],
+    enabled: !!partner?.partner_id && (!partner?.category || partner.category === "pharmacy"),
     queryFn: async () => {
-      if (!partnerId) return [];
       const { data, error } = await supabase
         .from("prescriptions")
         .select("*")
-        .eq("assigned_partner_id", partnerId)
+        .eq("logistics_partner_id", partner.partner_id)
+        .in("status", ["reviewed", "dispatched", "completed"])
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return (data || []) as DeliveryOrder[];
+      return (data || []).map(d => ({ ...d, type: 'prescription' })) as DeliveryOrder[];
     },
-    enabled: !!partnerId,
-    refetchInterval: 10000,
+    refetchInterval: 30000,
   });
 
-  const selected = orders.find((o) => o.id === selectedId);
+  const { data: labBookings = [], isLoading: loadingLab } = useQuery<DeliveryOrder[]>({
+    queryKey: ["logistics-labs", partner?.partner_id],
+    enabled: !!partner?.partner_id && (!partner?.category || partner.category === "lab"),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("lab_bookings")
+        .select("*")
+        .eq("logistics_partner_id", partner.partner_id)
+        .in("status", ["confirmed", "collected", "processing", "completed"])
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data || []).map(d => ({
+        id: d.id,
+        order_id: d.order_id,
+        patient_name: d.patient_name,
+        patient_phone: d.patient_phone,
+        delivery_address: d.patient_address,
+        created_at: d.created_at,
+        status: d.status,
+        delivery_fee: 49,
+        delivery_code: d.collection_code,
+        type: 'lab'
+      })) as DeliveryOrder[];
+    },
+    refetchInterval: 30000,
+  });
 
-  // ── Mutations ──────────────────────────────────────────────────────────────
-  const dispatchMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("prescriptions").update({ status: "dispatched", updated_at: new Date().toISOString() }).eq("id", id);
+  // ─── Earnings Data ──────────────────────────────────────────────────────────
+  const earnings = useMemo(() => {
+    const completedRx = (partner?.category === 'pharmacy' || !partner?.category) ? prescriptions.filter(p => p.status === 'completed') : [];
+    const completedLab = (partner?.category === 'lab' || !partner?.category) ? labBookings.filter(l => l.status === 'completed') : [];
+    const rxRev = completedRx.reduce((sum, p) => sum + (p.delivery_fee || 40), 0);
+    const labRev = completedLab.reduce((sum, l) => sum + (l.delivery_fee || 49), 0);
+    const total = rxRev + labRev;
+
+    // Platform share logic (Logistics often has fixed fee per delivery OR percentage)
+    const commRate = partner?.commission_rate || 30; // default 30%
+    const commType = partner?.commission_type || "percentage";
+    const platformShare = commType === "percentage" ? (total * commRate) / 100 : (completedRx.length + completedLab.length) * commRate;
+
+    const pendingRx = prescriptions.filter(p => p.status !== 'completed').length;
+    const pendingLab = labBookings.filter(l => l.status !== 'completed').length;
+
+    return {
+      total,
+      count: completedRx.length + completedLab.length,
+      pendingCount: pendingRx + pendingLab,
+      rxCount: completedRx.length,
+      labCount: completedLab.length,
+      rx: rxRev,
+      lab: labRev,
+      platformShare,
+      netPayable: total - platformShare
+    };
+  }, [prescriptions, labBookings, partner]);
+
+  // ─── Update order status ──────────────────────────────────────────
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, status, type }: { id: string; status: string; type: 'prescription' | 'lab' }) => {
+      const table = type === 'prescription' ? 'prescriptions' : 'lab_bookings';
+      const { error } = await supabase.from(table).update({ status }).eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["logistics-orders"] });
-      toast.success("Delivery started. Proceed to customer location.");
-    }
-  });
-
-  const completeMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("prescriptions").update({ status: "completed", updated_at: new Date().toISOString() }).eq("id", id);
-      if (error) throw error;
+    onSuccess: (_, variables) => {
+      const key = variables.type === 'prescription' ? "logistics-prescriptions" : "logistics-labs";
+      qc.invalidateQueries({ queryKey: [key] });
+      toast.success("Status updated!");
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["logistics-orders"] });
-      toast.success("Delivery marked as completed successfully!");
-      setSelectedId(null);
-      setCodeInput("");
-    }
+    onError: (err: any) => toast.error("Update failed: " + err.message),
   });
 
-  const handleVerifyDelivery = async () => {
-    if (!selected) return;
-    setCodeError("");
-    const expectedCode = selected.delivery_code?.toUpperCase();
-    if (!expectedCode) {
-      setCodeError("This order does not have a delivery code yet. Customer may not have paid.");
+  const handleVerifyOtp = () => {
+    if (!verifyingOrder) return;
+    
+    // Check if OTP matches
+    const correctCode = verifyingOrder.delivery_code;
+    
+    if (!correctCode) {
+      // If for some reason the order doesn't have a code in DB (old order), just allow it or handle it.
+      // We will allow it but warn.
+      toast.warning("No code found for this order, completing directly.");
+      updateMutation.mutate({ id: verifyingOrder.id, status: verifyingOrder.type === 'lab' ? 'collected' : 'completed', type: verifyingOrder.type });
+      setVerifyingOrder(null);
+      setOtpInput("");
       return;
     }
-    if (codeInput.trim().toUpperCase() !== expectedCode) {
-      setCodeError("Invalid delivery code. Please check with the customer.");
-      return;
+
+    if (otpInput.trim().toUpperCase() === correctCode.toUpperCase()) {
+      updateMutation.mutate({ id: verifyingOrder.id, status: verifyingOrder.type === 'lab' ? 'collected' : 'completed', type: verifyingOrder.type });
+      setVerifyingOrder(null);
+      setOtpInput("");
+    } else {
+      toast.error("Invalid verification code. Please check with the patient.");
     }
-    setVerifying(true);
-    await completeMutation.mutateAsync(selected.id);
-    setVerifying(false);
   };
 
-  const filteredOrders = orders.filter((o) => {
-    const q = search.toLowerCase();
-    const matchSearch = o.patient_name?.toLowerCase().includes(q) || o.order_id?.toLowerCase().includes(q);
-    const matchStatus = statusFilter === "All" || o.status === statusFilter.toLowerCase();
-    return matchSearch && matchStatus;
-  });
-
-  const stats = {
-    total: orders.length,
-    pending: orders.filter((o) => o.status === "reviewed").length,
-    active: orders.filter((o) => o.status === "dispatched").length,
-    completed: orders.filter((o) => o.status === "completed").length,
+  const handleLogout = async () => {
+    await revokePartnerSession();
+    clearAdminSession();
+    navigate("/admin/login/logistics");
   };
 
-  if (isVerifying) return (
-    <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-900 text-white">
-      <Loader2 className="h-10 w-10 text-blue-500 animate-spin mb-4" />
-      <p className="font-black text-sm uppercase tracking-widest italic">Aaroksha Logistics</p>
-      <p className="text-slate-500 text-[10px] mt-2 tracking-[0.2em] font-bold">Encrypted Connection Verified</p>
-    </div>
+  const filteredRx = prescriptions.filter(o => 
+    (o.patient_name || "").toLowerCase().includes(search.toLowerCase()) ||
+    (o.order_id || o.id).toLowerCase().includes(search.toLowerCase())
   );
 
-  return (
-    <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <header className="bg-white border-b border-gray-100 flex items-center justify-between px-8 py-4 sticky top-0 z-40 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
-            <Truck className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-lg font-black text-slate-900">{partnerName}</h1>
-            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Partner Operations Hub</p>
-          </div>
-        </div>
+  const filteredLab = labBookings.filter(o => 
+    (o.patient_name || "").toLowerCase().includes(search.toLowerCase()) ||
+    (o.order_id || o.id).toLowerCase().includes(search.toLowerCase())
+  );
 
-        <div className="flex items-center gap-4">
-          <div className="hidden md:flex gap-2">
-            <div className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black uppercase tracking-wider">
-              {stats.active} Active Deliveries
-            </div>
+  if (isVerifying) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
+        <Loader2 className="h-10 w-10 animate-spin text-sky-600" />
+        <p className="font-bold text-slate-400">Verifying Partner Session...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
+      {/* Mobile Header */}
+      <header className="md:hidden bg-slate-900 text-white px-4 py-3 flex items-center justify-between sticky top-0 z-40 shadow-md">
+        <div className="flex items-center gap-2">
+          <div className="h-10 w-10 overflow-hidden">
+            <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
           </div>
-          <button 
-            onClick={async () => {
-              await revokePartnerSession();
-              navigate("/admin/login");
-              toast.success("Logged out successfully");
-            }}
-            className="flex items-center gap-2 text-slate-400 hover:text-red-500 transition-colors group"
-          >
-            <LogOut className="h-4 w-4" />
-            <span className="text-xs font-bold uppercase tracking-widest">Logout</span>
-          </button>
+          <h1 className="font-black text-xs tracking-tight uppercase">Fleet</h1>
         </div>
+        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 text-slate-300 hover:text-white">
+          {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+        </button>
       </header>
 
-      <main className="flex-1 p-8 space-y-6">
-        <div className="max-w-6xl mx-auto space-y-6">
-          
-          {/* Dashboard Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[
-              { label: "Assigned Orders", val: stats.total, color: "text-blue-600", bg: "bg-blue-50" },
-              { label: "Awaiting Dispatch", val: stats.pending, color: "text-amber-600", bg: "bg-amber-50" },
-              { label: "Active Drops", val: stats.active, color: "text-indigo-600", bg: "bg-indigo-50" },
-              { label: "Completed Today", val: stats.completed, color: "text-emerald-600", bg: "bg-emerald-50" },
-            ].map((s, i) => (
-              <div key={i} className={`bg-white p-5 rounded-2xl border border-gray-100 shadow-sm transition-all hover:shadow-md`}>
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">{s.label}</p>
-                <p className={`text-2xl font-black ${s.color}`}>{s.val}</p>
-              </div>
-            ))}
+      {/* Sidebar - Desktop & Mobile Overlay */}
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0
+        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
+        <div className="p-6 border-b border-white/5 flex items-center gap-3">
+          <div className="h-12 w-12 overflow-hidden shrink-0">
+            <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
           </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Orders List */}
-            <div className="lg:col-span-4 space-y-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  placeholder="Order ID or Patient..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-full h-11 bg-white border border-gray-100 rounded-2xl pl-10 pr-4 text-sm focus:outline-none focus:border-indigo-400 transition-all shadow-sm"
-                />
-              </div>
-
-              <div className="space-y-3">
-                {isLoading ? (
-                  <div className="py-20 text-center text-gray-400 font-bold italic"><Loader2 className="h-6 w-6 animate-spin mx-auto mb-2 text-indigo-500" />Syncing with Cloud...</div>
-                ) : filteredOrders.length === 0 ? (
-                  <div className="py-20 text-center text-gray-400 font-medium bg-white rounded-3xl border border-gray-100 border-dashed">No active deliveries assigned</div>
-                ) : filteredOrders.map((o) => (
-                  <button
-                    key={o.id}
-                    onClick={() => setSelectedId(o.id)}
-                    className={`w-full text-left p-5 rounded-3xl border transition-all relative overflow-hidden group ${
-                      selectedId === o.id ? "bg-indigo-600 border-indigo-600 text-white shadow-xl shadow-indigo-200" : "bg-white border-gray-100 hover:border-indigo-200 text-gray-900 shadow-sm"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3 mb-2">
-                      <p className="text-[10px] font-black uppercase tracking-widest opacity-60">{o.order_id || `#${o.id.slice(0, 8)}`}</p>
-                      <StatusBadge status={o.status} />
-                    </div>
-                    <p className="font-black text-sm">{o.patient_name}</p>
-                    <p className={`text-[10px] font-bold mt-1 line-clamp-1 opacity-60`}>{o.delivery_address}</p>
-                    {o.is_express_delivery && <div className="absolute top-0 right-0 h-10 w-10 bg-amber-400/20 rounded-bl-3xl flex items-center justify-center text-xs">⚡</div>}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Order Details & Verification */}
-            <div className="lg:col-span-8">
-              {!selected ? (
-                <div className="h-full flex flex-col items-center justify-center text-center p-12 bg-white rounded-[40px] border border-gray-100 border-dashed shadow-sm">
-                  <div className="h-20 w-20 bg-indigo-50 rounded-3xl flex items-center justify-center mb-6">
-                    <Package className="h-10 w-10 text-indigo-600 opacity-20" />
-                  </div>
-                  <h3 className="text-xl font-black text-slate-900 uppercase">Select delivery task</h3>
-                  <p className="text-sm text-slate-400 mt-2 max-w-xs">Pick a task from the sidebar to view details, location, and verify delivery code.</p>
-                </div>
-              ) : (
-                <div className="bg-white rounded-[40px] border border-gray-100 shadow-xl overflow-hidden flex flex-col h-full ring-1 ring-black/[0.02]">
-                  <div className="p-8 pb-4 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="h-14 w-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shrink-0">
-                        <User className="h-6 w-6" />
-                      </div>
-                      <div>
-                        <h2 className="text-xl font-black text-slate-900">{selected.patient_name}</h2>
-                        <div className="flex items-center gap-2 text-xs font-bold text-slate-400 mt-1 uppercase tracking-widest">
-                          <Phone className="h-3 w-3" /> {selected.patient_phone}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Status</p>
-                       <StatusBadge status={selected.status} />
-                    </div>
-                  </div>
-
-                  <div className="p-8 pt-4 space-y-8 flex-1 overflow-y-auto">
-                    {/* Location Section */}
-                    <div className="bg-slate-50 p-6 rounded-[32px] border border-slate-100">
-                      <div className="flex items-start gap-4 mb-4">
-                        <div className="h-10 w-10 bg-white rounded-xl border border-slate-200 flex items-center justify-center text-indigo-600 shadow-sm shrink-0">
-                          <MapPin className="h-4 w-4" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Delivery Destination</p>
-                          <p className="text-sm font-bold text-slate-700 leading-relaxed">{selected.delivery_address}</p>
-                        </div>
-                        <button className="px-4 py-2 bg-indigo-600 text-white text-[10px] font-black uppercase rounded-xl flex items-center gap-2 shadow-lg shadow-indigo-100 active:scale-95 transition-all">
-                          Navigate <ExternalLink className="h-3 w-3" />
-                        </button>
-                      </div>
-                      <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
-                        <div className="h-full bg-indigo-600 w-2/3 rounded-full animate-pulse transition-all duration-1000" />
-                      </div>
-                    </div>
-
-                    {/* Workflow Section */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                       <div className="space-y-4">
-                          <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
-                             <RefreshCcw className="h-4 w-4 text-indigo-600" /> Delivery Workflow
-                          </h4>
-                          {selected.status === "reviewed" ? (
-                            <div className="p-6 bg-blue-50 border border-blue-100 rounded-3xl space-y-4">
-                               <p className="text-sm font-bold text-blue-700 leading-relaxed">Confirm that you have picked up the package and are starting the delivery process.</p>
-                               <button 
-                                 onClick={() => dispatchMutation.mutate(selected.id)}
-                                 disabled={dispatchMutation.isPending}
-                                 className="w-full h-12 bg-blue-600 text-white font-black text-sm uppercase rounded-2xl shadow-lg shadow-blue-100 active:scale-95 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
-                               >
-                                 {dispatchMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />}
-                                 Start Delivery
-                               </button>
-                            </div>
-                          ) : selected.status === "dispatched" ? (
-                             <div className="p-6 bg-slate-50 border border-slate-200 rounded-3xl">
-                               <div className="flex items-center gap-2 text-indigo-600 mb-3">
-                                  <Truck className="h-4 w-4 animate-bounce" />
-                                  <span className="text-xs font-black uppercase tracking-widest italic">Out for Delivery</span>
-                               </div>
-                               <p className="text-sm font-bold text-slate-600">The package is currently in transit. Use the secure verification panel after reaching the customer to complete delivery.</p>
-                             </div>
-                          ) : (
-                             <div className="p-6 bg-emerald-50 border border-emerald-100 rounded-3xl flex items-center justify-center text-center">
-                                <div>
-                                   <div className="h-12 w-12 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-lg shadow-emerald-200">
-                                      <CheckCircle2 className="h-6 w-6" />
-                                   </div>
-                                   <p className="text-sm font-black text-emerald-700 uppercase italic">Successfully Delivered</p>
-                                   <p className="text-[10px] text-emerald-600 mt-1 font-bold">Closed on {new Date(selected.created_at).toLocaleDateString()}</p>
-                                </div>
-                             </div>
-                          )}
-                       </div>
-
-                       {/* CODE VERIFICATION */}
-                       <div className="space-y-4">
-                          <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
-                             <KeyRound className="h-4 w-4 text-indigo-600" /> Secure Verification
-                          </h4>
-                          <div className={`p-6 rounded-3xl border-2 transition-all ${selected.status === 'dispatched' ? 'bg-white border-indigo-600 ring-4 ring-indigo-50 border-dashed' : 'bg-slate-50 border-slate-200 grayscale opacity-40 select-none'}`}>
-                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Enter Customer Code</p>
-                             <div className="space-y-4">
-                                <div className="relative">
-                                   <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-indigo-600" />
-                                   <input 
-                                     disabled={selected.status !== 'dispatched'}
-                                     value={codeInput}
-                                     onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
-                                     placeholder="D-XXXXXX"
-                                     className="w-full h-14 bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 text-center text-xl font-black tracking-[0.2em] focus:outline-none focus:bg-white focus:border-indigo-600 transition-all uppercase placeholder:text-slate-300 placeholder:tracking-normal"
-                                   />
-                                </div>
-                                {codeError && <div className="flex items-center gap-2 text-red-500 bg-red-50 p-3 rounded-xl border border-red-100"> <AlertCircle className="h-4 w-4" /> <span className="text-[10px] font-black leading-tight">{codeError}</span> </div>}
-                                <button 
-                                  onClick={handleVerifyDelivery}
-                                  disabled={selected.status !== 'dispatched' || verifying}
-                                  className="w-full h-14 bg-indigo-600 text-white font-black text-sm uppercase rounded-2xl shadow-xl shadow-indigo-100 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:shadow-none"
-                                >
-                                  {verifying ? <Loader2 className="h-5 w-5 animate-spin" /> : "Verify & Complete"}
-                                </button>
-                             </div>
-                          </div>
-                          <p className="text-[9px] text-slate-400 font-bold leading-relaxed px-2">Secure verification requires the unique 6-character code sent to the customer after payment. Enter this code to finalize the order.</p>
-                       </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+          <div>
+            <h1 className="font-black text-sm tracking-tight uppercase">Logistics</h1>
+            <p className="text-[10px] text-sky-400 font-bold uppercase tracking-widest">Aaroksha Partner</p>
           </div>
         </div>
+
+        <nav className="flex-1 p-4 space-y-1">
+          {[
+            { id: 'prescriptions', icon: <Package className="h-4 w-4" />, label: 'Deliveries', show: !partner?.category || partner.category === 'pharmacy' },
+            { id: 'labs', icon: <FlaskConical className="h-4 w-4" />, label: 'Collections', show: !partner?.category || partner.category === 'lab' },
+            { id: 'stats', icon: <BarChart3 className="h-4 w-4" />, label: 'Performance', show: true },
+          ].filter(item => item.show).map(item => (
+            <button 
+              key={item.id} 
+              onClick={() => { setActiveTab(item.id); setIsMobileMenuOpen(false); }} 
+              className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-bold transition-all ${activeTab === item.id ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+            >
+              {item.icon} {item.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="p-4 border-t border-white/5">
+          <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-red-400 hover:bg-red-400/10 transition-all">
+            <LogOut className="h-4 w-4" /> Logout
+          </button>
+        </div>
+      </aside>
+
+      {/* Mobile Overlay Backdrop */}
+      {isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col p-4 md:p-8 overflow-x-hidden">
+        <header className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+          <div>
+            <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">
+              {activeTab === 'prescriptions' ? 'Medicine Deliveries' : activeTab === 'labs' ? 'Lab Test Collections' : 'Performance Analytics'}
+            </h2>
+            <p className="text-slate-400 text-xs md:text-sm font-medium">Manage your assignments and track efficiency.</p>
+          </div>
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+             <div className="relative flex-1 sm:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input 
+                  placeholder="Search orders..." 
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="pl-9 h-11 rounded-xl border-slate-200 bg-white" 
+                />
+             </div>
+          </div>
+        </header>
+
+        {(loadingRx || loadingLab) ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-4">
+             <Loader2 className="h-8 w-8 animate-spin text-sky-500" />
+             <p className="text-slate-400 font-bold text-sm">Loading assignments...</p>
+          </div>
+        ) : activeTab === 'stats' ? (
+          <div className="space-y-6 md:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+             {/* Delivery Stats Row */}
+             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {[
+                   { label: "Total Completed", value: earnings.count, icon: <CheckCircle className="h-5 w-5 text-emerald-600" />, accent: "bg-emerald-50" },
+                   { label: "Pending Tasks",   value: earnings.pendingCount, icon: <Clock className="h-5 w-5 text-amber-600" />, accent: "bg-amber-50" },
+                   { label: "Medicine Deliveries", value: earnings.rxCount, icon: <Package className="h-5 w-5 text-sky-600" />, accent: "bg-sky-50" },
+                   { label: "Lab Collections",   value: earnings.labCount, icon: <FlaskConical className="h-5 w-5 text-violet-600" />, accent: "bg-violet-50" },
+                ].map(s => (
+                   <div key={s.label} className="bg-white rounded-[2rem] border border-slate-100 p-6 flex items-center gap-4 shadow-sm hover:shadow-md transition-all">
+                      <div className={`h-12 w-12 rounded-2xl flex items-center justify-center ${s.accent} shrink-0`}>{s.icon}</div>
+                      <div>
+                         <p className="text-2xl font-black text-slate-900 leading-none">{s.value}</p>
+                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1.5">{s.label}</p>
+                      </div>
+                   </div>
+                ))}
+             </div>
+
+             {/* History Table */}
+             <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+                <div className="px-8 py-6 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                   <div>
+                      <h3 className="text-xl font-black text-slate-800 italic">Job History</h3>
+                      <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mt-1">Review your completed deliveries and collections</p>
+                   </div>
+                   
+                   <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-100 self-start">
+                      {['all', 'today', 'yesterday', 'month'].map(f => (
+                        <button key={f} onClick={() => setHistoryFilter(f)}
+                          className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${historyFilter === f ? "bg-white text-sky-600 shadow-sm" : "text-slate-400 hover:text-slate-600"}`}>
+                          {f}
+                        </button>
+                      ))}
+                   </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                   <Table>
+                      <TableHeader className="bg-slate-50/50">
+                         <TableRow>
+                            <TableHead className="px-8 py-5 font-black text-[10px] uppercase tracking-widest text-slate-400">Order/Booking ID</TableHead>
+                            <TableHead className="font-black text-[10px] uppercase tracking-widest text-slate-400">Type</TableHead>
+                            <TableHead className="font-black text-[10px] uppercase tracking-widest text-slate-400">Patient</TableHead>
+                            <TableHead className="font-black text-[10px] uppercase tracking-widest text-slate-400">Date Completed</TableHead>
+                            <TableHead className="text-right px-8 font-black text-[10px] uppercase tracking-widest text-slate-400">Status</TableHead>
+                         </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                         {[...prescriptions, ...labBookings]
+                           .filter(p => p.status === 'completed')
+                           .filter(p => {
+                             const date = new Date(p.created_at);
+                             const now = new Date();
+                             if (historyFilter === 'today') return date.toDateString() === now.toDateString();
+                             if (historyFilter === 'yesterday') {
+                               const y = new Date(); y.setDate(now.getDate() - 1);
+                               return date.toDateString() === y.toDateString();
+                             }
+                             if (historyFilter === 'month') {
+                               const m = new Date(); m.setMonth(now.getMonth() - 1);
+                               return date >= m;
+                             }
+                             return true;
+                           })
+                           .slice(0, 50)
+                           .map(p => (
+                            <TableRow key={p.id} className="hover:bg-slate-50/50 transition-colors">
+                               <TableCell className="px-8 py-5 font-mono text-xs font-black text-slate-400">
+                                 {p.order_id || p.id.slice(0, 8).toUpperCase()}
+                               </TableCell>
+                               <TableCell>
+                                 <span className={`inline-flex px-2 py-1 rounded-lg text-[9px] font-black uppercase ${p.type === 'prescription' ? 'bg-sky-50 text-sky-600' : 'bg-violet-50 text-violet-600'}`}>
+                                   {p.type === 'prescription' ? 'Medicine' : 'Lab'}
+                                 </span>
+                               </TableCell>
+                               <TableCell className="font-bold text-slate-700 text-sm">{p.patient_name}</TableCell>
+                               <TableCell className="text-xs text-slate-400">{new Date(p.created_at).toLocaleDateString("en-IN", { day: 'numeric', month: 'short', year: 'numeric' })}</TableCell>
+                               <TableCell className="text-right px-8">
+                                 <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">
+                                   <CheckCircle className="h-3 w-3" /> Delivered
+                                 </span>
+                               </TableCell>
+                            </TableRow>
+                         ))}
+                         {([...prescriptions, ...labBookings].filter(p => p.status === 'completed').length === 0) && (
+                           <TableRow>
+                             <TableCell colSpan={5} className="py-20 text-center">
+                               <div className="h-16 w-16 bg-slate-50 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-slate-100">
+                                 <ClipboardList className="h-8 w-8 text-slate-300" />
+                               </div>
+                               <p className="font-black text-slate-400 text-sm">No delivery history found</p>
+                             </TableCell>
+                           </TableRow>
+                         )}
+                      </TableBody>
+                   </Table>
+                </div>
+             </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Desktop Table View */}
+            <div className="hidden md:block bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+               <Table>
+                 <TableHeader className="bg-slate-50/50">
+                   <TableRow>
+                     <TableHead className="font-black text-[10px] uppercase tracking-widest text-slate-400 py-4">Order ID</TableHead>
+                     <TableHead className="font-black text-[10px] uppercase tracking-widest text-slate-400">Patient</TableHead>
+                     <TableHead className="font-black text-[10px] uppercase tracking-widest text-slate-400">Location</TableHead>
+                     <TableHead className="font-black text-[10px] uppercase tracking-widest text-slate-400">Status</TableHead>
+                     <TableHead className="font-black text-[10px] uppercase tracking-widest text-slate-400">Time</TableHead>
+                     <TableHead className="text-right">Actions</TableHead>
+                   </TableRow>
+                 </TableHeader>
+                 <TableBody>
+                   {(activeTab === 'prescriptions' ? filteredRx : filteredLab).map((order) => (
+                     <TableRow key={order.id} className="hover:bg-slate-50/50 transition-colors">
+                       <TableCell className="font-bold text-slate-900">{order.order_id || 'ID-'+order.id.slice(0,4)}</TableCell>
+                       <TableCell>
+                         <div>
+                            <p className="font-bold text-sm text-slate-800">{order.patient_name}</p>
+                            <p className="text-[11px] text-slate-400 font-medium">{order.patient_phone}</p>
+                         </div>
+                       </TableCell>
+                       <TableCell>
+                         <p className="text-sm font-medium text-slate-600 line-clamp-1 max-w-[200px]">{order.delivery_address}</p>
+                       </TableCell>
+                       <TableCell>
+                         <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${statusStyle[order.status] || "bg-slate-100"}`}>
+                           {order.status}
+                         </span>
+                       </TableCell>
+                       <TableCell className="text-xs text-slate-400 font-medium">
+                         {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                       </TableCell>
+                       <TableCell className="text-right">
+                         <div className="flex justify-end gap-2">
+                           {order.status !== 'completed' && order.status !== 'collected' && order.status !== 'cancelled' && (
+                              <button 
+                                onClick={() => {
+                                  setVerifyingOrder(order);
+                                  setOtpInput("");
+                                }}
+                                className="h-8 px-3 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 text-xs font-bold transition-all"
+                              >
+                                Verify & {order.type === 'lab' ? 'Collect' : 'Deliver'}
+                              </button>
+                           )}
+                           <button 
+                               onClick={() => setSelectedOrder(order)}
+                               className="h-8 w-8 rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center transition-all"
+                             >
+                             <MapPin className="h-4 w-4" />
+                           </button>
+                         </div>
+                       </TableCell>
+                     </TableRow>
+                   ))}
+                 </TableBody>
+               </Table>
+            </div>
+
+            {/* Mobile Card View */}
+            <div className="md:hidden space-y-4">
+              {(activeTab === 'prescriptions' ? filteredRx : filteredLab).map((order) => (
+                <div key={order.id} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm space-y-4">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="text-[10px] font-black text-sky-600 uppercase tracking-widest">{order.order_id || 'ID-'+order.id.slice(0,4)}</p>
+                      <h4 className="font-black text-slate-800 text-base mt-1">{order.patient_name}</h4>
+                      <p className="text-xs text-slate-400 font-bold mt-0.5">{order.patient_phone}</p>
+                    </div>
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${statusStyle[order.status] || "bg-slate-100"}`}>
+                      {order.status}
+                    </span>
+                  </div>
+
+                  <div className="flex items-start gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                    <MapPin className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
+                    <p className="text-xs font-medium text-slate-600 leading-relaxed">{order.delivery_address}</p>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <p className="text-[10px] font-bold text-slate-400 italic">Assign time: {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => setSelectedOrder(order)}
+                        className="h-10 w-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center border border-slate-200 shadow-sm"
+                      >
+                        <MapPin className="h-5 w-5" />
+                      </button>
+                      {order.status !== 'completed' && order.status !== 'collected' && order.status !== 'cancelled' && (
+                        <button 
+                          onClick={() => {
+                            setVerifyingOrder(order);
+                            setOtpInput("");
+                          }}
+                          className="flex-1 h-10 px-4 rounded-xl bg-emerald-500 text-white font-black text-xs shadow-lg shadow-emerald-100 transition-all active:scale-95"
+                        >
+                          Verify & {order.type === 'lab' ? 'Collect' : 'Deliver'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {(activeTab === 'prescriptions' ? filteredRx : filteredLab).length === 0 && (
+              <div className="h-60 flex flex-col items-center justify-center text-slate-300 gap-2 bg-white rounded-2xl border border-slate-100 md:border-none">
+                <ClipboardList className="h-12 w-12" />
+                <p className="font-black text-sm">No assignments found</p>
+              </div>
+            )}
+          </div>
+        )}
       </main>
+
+      {/* Details Dialog */}
+      <Dialog open={!!selectedOrder} onOpenChange={() => setSelectedOrder(null)}>
+        <DialogContent className="max-w-md rounded-3xl overflow-hidden border-none p-0">
+          <div className="bg-sky-600 p-6 text-white text-center">
+            <div className="h-12 w-12 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <MapPin className="h-6 w-6" />
+            </div>
+            <h3 className="text-xl font-black tracking-tight">Delivery Details</h3>
+            <p className="text-sky-100 text-xs font-bold uppercase tracking-widest mt-1">Assignment Info</p>
+          </div>
+          {selectedOrder && (
+            <div className="p-6 space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Status</p>
+                  <p className="text-sm font-black text-slate-900 capitalize">{selectedOrder.status}</p>
+                </div>
+                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Fee</p>
+                  <p className="text-sm font-black text-emerald-600">₹{selectedOrder.delivery_fee || 40}</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex gap-4">
+                  <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
+                    <Map className="h-5 w-5 text-slate-500" />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Address</Label>
+                    <p className="text-sm font-bold text-slate-700 leading-relaxed">{selectedOrder.delivery_address}</p>
+                  </div>
+                </div>
+                <div className="flex gap-4">
+                  <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
+                    <Phone className="h-5 w-5 text-slate-500" />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Contact</Label>
+                    <p className="text-sm font-bold text-slate-700">{selectedOrder.patient_name}</p>
+                    <p className="text-xs font-medium text-slate-500">{selectedOrder.patient_phone}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <Button className="flex-1 rounded-2xl h-12 font-black shadow-lg shadow-sky-200" onClick={() => setSelectedOrder(null)}>
+                  Close
+                </Button>
+                {selectedOrder.status === 'pending' || selectedOrder.status === 'confirmed' || selectedOrder.status === 'reviewed' ? (
+                   <Button 
+                    className="flex-1 rounded-2xl h-12 font-black bg-orange-500 hover:bg-orange-600 text-white"
+                    onClick={() => {
+                        updateMutation.mutate({ id: selectedOrder.id, status: 'dispatched', type: selectedOrder.type });
+                        setSelectedOrder(null);
+                    }}
+                    disabled={updateMutation.isPending}
+                   >
+                     Dispatch Order
+                   </Button>
+                ) : null}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* OTP Verification Dialog */}
+      <Dialog open={!!verifyingOrder} onOpenChange={(open) => !open && setVerifyingOrder(null)}>
+        <DialogContent className="max-w-xs rounded-3xl p-6 text-center">
+          <DialogHeader>
+            <DialogTitle className="font-black text-xl mb-2">Verify Code</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-slate-500 font-medium">
+              Ask the patient for the 6-character {verifyingOrder?.type === 'lab' ? 'collection' : 'delivery'} code shown on their profile.
+            </p>
+            <Input
+              value={otpInput}
+              onChange={(e) => setOtpInput(e.target.value.toUpperCase())}
+              placeholder="e.g. A1B2C3"
+              className="text-center font-black tracking-widest text-lg h-14"
+              maxLength={6}
+            />
+          </div>
+          <div className="flex gap-3">
+            <Button variant="outline" className="flex-1 rounded-2xl" onClick={() => setVerifyingOrder(null)}>
+              Cancel
+            </Button>
+            <Button 
+              className="flex-1 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white font-black"
+              onClick={handleVerifyOtp}
+              disabled={otpInput.length < 5 || updateMutation.isPending}
+            >
+              {updateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

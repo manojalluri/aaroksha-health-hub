@@ -65,17 +65,7 @@ const SuperAdminLogin = () => {
 
         {/* Logo */}
         <div className="flex flex-col items-center mb-10">
-          <div className="relative mb-6">
-            <div
-              className="h-20 w-20 rounded-3xl flex items-center justify-center shadow-2xl border border-amber-400/20"
-              style={{ background: "linear-gradient(135deg, #d97706, #b45309)" }}
-            >
-              <ShieldCheck className="h-10 w-10 text-white" />
-            </div>
-            {/* Pulsing rings */}
-            <span className="absolute -top-1 -right-1 h-5 w-5 bg-amber-400 rounded-full border-2 border-slate-900 animate-pulse" />
-            <div className="absolute inset-0 rounded-3xl border border-amber-400/20 scale-110 animate-ping opacity-30" style={{ animationDuration: "3s" }} />
-          </div>
+
           <h1 className="text-3xl font-black text-white tracking-tight">Super Admin</h1>
           <p className="text-amber-400/70 text-[11px] font-bold uppercase tracking-[0.2em] mt-2">Aaroksha Health · Platform Control</p>
           {/* Security badge */}

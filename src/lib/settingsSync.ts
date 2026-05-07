@@ -26,6 +26,7 @@ export interface PlatformSettings {
   pharmCheck: boolean;
   upi: boolean;
   cod: boolean;
+  upi_id: string;
 }
 
 export const DEFAULT_SETTINGS: PlatformSettings = {
@@ -53,6 +54,7 @@ export const DEFAULT_SETTINGS: PlatformSettings = {
   pharmCheck: true,
   upi: true,
   cod: true,
+  upi_id: "",
 };
 
 export const getSettings = (): PlatformSettings => {
@@ -72,37 +74,58 @@ export const saveSettingsLocally = (settings: PlatformSettings) => {
 };
 
 export const saveSettingsToSupabase = async (settings: PlatformSettings) => {
-  const { error } = await supabase
-    .from("platform_settings")
-    .upsert({ 
-      id: 1, 
-      platform_name: settings.platform_name,
-      support_email: settings.support_email,
-      support_phone: settings.support_phone,
-      currency: settings.currency,
-      cgst: settings.cgst,
-      sgst: settings.sgst,
-      opd_fee: settings.opd_fee,
-      lab_fee: settings.lab_fee,
-      pharm_fee: settings.pharm_fee,
-      priority_surcharge: settings.priority_surcharge,
-      delivery_fee: settings.delivery_fee,
-      express_fee: settings.express_fee,
-      free_threshold: settings.free_threshold,
-      delivery_radius: settings.delivery_radius,
-      delivery_time: settings.delivery_time,
-      is_maintenance: settings.is_maintenance,
-      opd_check: settings.opdCheck,
-      lab_check: settings.labCheck,
-      pharm_check: settings.pharmCheck,
-      upi: settings.upi,
-      cod: settings.cod
-    });
-  
-  if (!error) {
-    saveSettingsLocally(settings);
+  try {
+    // 1. Fetch the existing record to get the correct ID (could be 'global', 1, or a UUID)
+    const { data: existing, error: fetchError } = await supabase
+      .from("platform_settings")
+      .select("id")
+      .limit(1)
+      .maybeSingle();
+
+    if (fetchError) throw fetchError;
+
+    const targetId = existing?.id || 'global';
+
+    // 2. Upsert with the detected ID
+    const { error } = await supabase
+      .from("platform_settings")
+      .upsert({ 
+        id: targetId, 
+        platform_name: settings.platform_name,
+        support_email: settings.support_email,
+        support_phone: settings.support_phone,
+        currency: settings.currency,
+        cgst: settings.cgst,
+        sgst: settings.sgst,
+        opd_fee: settings.opd_fee,
+        lab_fee: settings.lab_fee,
+        pharm_fee: settings.pharm_fee,
+        priority_surcharge: settings.priority_surcharge,
+        delivery_fee: settings.delivery_fee,
+        express_fee: settings.express_fee,
+        free_threshold: settings.free_threshold,
+        delivery_radius: settings.delivery_radius,
+        delivery_time: settings.delivery_time,
+        is_maintenance: settings.is_maintenance,
+        opd_check: settings.opdCheck,
+        lab_check: settings.labCheck,
+        pharm_check: settings.pharmCheck,
+        upi: settings.upi,
+        cod: settings.cod,
+        upi_id: settings.upi_id || ""
+      });
+    
+    if (!error) {
+      saveSettingsLocally(settings);
+      return { error: null };
+    } else {
+      console.error("Supabase Settings Sync Error:", error);
+      return { error };
+    }
+  } catch (err: any) {
+    console.error("Settings Save Failed:", err);
+    return { error: err };
   }
-  return { error };
 };
 
 export const syncSettingsFromSupabase = async () => {
@@ -110,33 +133,35 @@ export const syncSettingsFromSupabase = async () => {
     const { data, error } = await supabase
       .from("platform_settings")
       .select("*")
-      .eq("id", 1)
-      .single();
+      .limit(1)
+      .maybeSingle();
     
     if (data && !error) {
+      const local = getSettings();
       const mapped: PlatformSettings = {
-        ...DEFAULT_SETTINGS,
-        platform_name: data.platform_name,
-        support_email: data.support_email || DEFAULT_SETTINGS.support_email,
-        support_phone: data.support_phone || DEFAULT_SETTINGS.support_phone,
-        currency: data.currency || DEFAULT_SETTINGS.currency,
-        cgst: data.cgst || DEFAULT_SETTINGS.cgst,
-        sgst: data.sgst || DEFAULT_SETTINGS.sgst,
-        opd_fee: data.opd_fee,
-        lab_fee: data.lab_fee,
-        pharm_fee: data.pharm_fee,
-        priority_surcharge: data.priority_surcharge || DEFAULT_SETTINGS.priority_surcharge,
-        delivery_fee: data.delivery_fee || DEFAULT_SETTINGS.delivery_fee,
-        express_fee: data.express_fee,
-        free_threshold: data.free_threshold || DEFAULT_SETTINGS.free_threshold,
-        delivery_radius: data.delivery_radius || DEFAULT_SETTINGS.delivery_radius,
-        delivery_time: data.delivery_time || DEFAULT_SETTINGS.delivery_time,
-        is_maintenance: data.is_maintenance,
-        opdCheck: data.opd_check,
-        labCheck: data.lab_check,
-        pharmCheck: data.pharm_check,
-        upi: data.upi ?? DEFAULT_SETTINGS.upi,
-        cod: data.cod ?? DEFAULT_SETTINGS.cod
+        ...local,
+        platform_name: data.platform_name || local.platform_name,
+        support_email: data.support_email || local.support_email,
+        support_phone: data.support_phone || local.support_phone,
+        currency: data.currency || local.currency,
+        cgst: data.cgst ?? local.cgst,
+        sgst: data.sgst ?? local.sgst,
+        opd_fee: data.opd_fee ?? local.opd_fee,
+        lab_fee: data.lab_fee ?? local.lab_fee,
+        pharm_fee: data.pharm_fee ?? local.pharm_fee,
+        priority_surcharge: data.priority_surcharge ?? local.priority_surcharge,
+        delivery_fee: data.delivery_fee ?? local.delivery_fee,
+        express_fee: data.express_fee ?? local.express_fee,
+        free_threshold: data.free_threshold ?? local.free_threshold,
+        delivery_radius: data.delivery_radius ?? local.delivery_radius,
+        delivery_time: data.delivery_time ?? local.delivery_time,
+        is_maintenance: data.is_maintenance ?? local.is_maintenance,
+        opdCheck: data.opd_check ?? local.opdCheck,
+        labCheck: data.lab_check ?? local.labCheck,
+        pharmCheck: data.pharm_check ?? local.pharmCheck,
+        upi: data.upi ?? local.upi,
+        cod: data.cod ?? local.cod,
+        upi_id: data.upi_id ?? local.upi_id,
       };
       saveSettingsLocally(mapped);
       return mapped;

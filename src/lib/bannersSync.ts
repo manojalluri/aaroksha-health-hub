@@ -87,17 +87,20 @@ export const syncBannersFromSupabase = async () => {
     if (data && !error && data.length > 0) {
       const mapped = data.map(b => ({
         id: b.id,
-        title: b.title,
-        subtitle: b.subtitle,
-        image: b.image_url,
-        to: b.link_to,
+        title: b.title || "",
+        subtitle: b.subtitle || "",
+        image: b.image_url || "",
+        to: b.link_to || "/",
         cta: b.cta_text || "Action",
         gradient: b.gradient || "linear-gradient(135deg, #2563eb 0%, #60a5fa 100%)",
         ctaColor: b.cta_color || "#2563eb",
         emoji: b.emoji || "✨",
         badge: b.badge_text || "Special",
+        // If there's an image, ALWAYS show it as-is (no text overlay)
+        imageOnly: !!(b.image_url),
         isCustom: true
       }));
+
       saveBanners(mapped);
       return mapped;
     }

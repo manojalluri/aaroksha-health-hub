@@ -151,3 +151,21 @@ export const revokePartnerSession = async () => {
   }
   clearAdminSession();
 };
+
+// ─── Get partnerId from the currently active session ─────────────────
+// Returns the partner_id string (e.g. "HOSPITAL_AAROKSHA001") or null
+export const getPartnerIdFromSession = async (): Promise<string | null> => {
+  const local = readLocalAdminSession();
+  if (!local?.token) return null;
+  try {
+    const { data, error } = await supabase
+      .from("admin_sessions")
+      .select("partner_id")
+      .eq("token", local.token)
+      .single();
+    if (error || !data) return null;
+    return data.partner_id as string;
+  } catch {
+    return null;
+  }
+};

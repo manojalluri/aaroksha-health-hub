@@ -75,15 +75,7 @@ const PharmacyLogin = () => {
 
         {/* Logo */}
         <div className="flex flex-col items-center mb-10">
-          <div className="relative mb-6">
-            <div
-              className="h-20 w-20 rounded-3xl flex items-center justify-center shadow-2xl border border-emerald-400/20"
-              style={{ background: "linear-gradient(135deg, #059669, #047857)" }}
-            >
-              <Pill className="h-10 w-10 text-white" />
-            </div>
-            <span className="absolute -top-1 -right-1 h-5 w-5 bg-emerald-400 rounded-full border-2 border-slate-900 animate-pulse" />
-          </div>
+
           <h1 className="text-3xl font-black text-white tracking-tight">Pharmacy Portal</h1>
           <p className="text-emerald-300 text-[11px] font-bold uppercase tracking-[0.2em] mt-2">Aaroksha Health · Pharmacy Admin</p>
         </div>

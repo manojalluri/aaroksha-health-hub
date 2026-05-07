@@ -16,10 +16,8 @@ const Header = () => {
   return (
     <header className="sticky top-0 z-50 glass-card border-b border-border/40">
       <div className="container mx-auto flex items-center justify-between py-3 px-4">
-        <Link to="/" className="flex items-center gap-2">
-          <span className="text-xl font-bold tracking-tight text-foreground">
-            AAROKSHA
-          </span>
+        <Link to="/" className="flex items-center">
+          <img src="/logo.png" alt="Aaroksha Health Hub" className="h-14 w-auto object-contain" />
         </Link>
 
         <nav className="hidden md:flex items-center gap-6">

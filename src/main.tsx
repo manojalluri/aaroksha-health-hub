@@ -2,6 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import { initSupabaseKeepAlive } from "./lib/keepAlive";
 
 const renderApp = () => {
   const rootElement = document.getElementById("root");
@@ -12,6 +13,7 @@ const renderApp = () => {
     newRoot.id = "root";
     document.body.appendChild(newRoot);
     createRoot(newRoot).render(<App />);
+    initSupabaseKeepAlive();
   } else {
     try {
       const root = createRoot(rootElement);
@@ -20,6 +22,7 @@ const renderApp = () => {
           <App />
         </React.StrictMode>
       );
+      initSupabaseKeepAlive();
       console.log("Aaroksha Health Hub initialized successfully.");
     } catch (err) {
       console.error("main.tsx: Error during rendering:", err);
