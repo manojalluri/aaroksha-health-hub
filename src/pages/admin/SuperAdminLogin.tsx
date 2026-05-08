@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
   Lock, Mail, ChevronRight, ShieldCheck, Loader2, Eye, EyeOff, ArrowLeft
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { checkIsLoggedIn } from "@/lib/adminAuth";
 
 const SuperAdminLogin = () => {
   const navigate = useNavigate();
@@ -13,8 +14,20 @@ const SuperAdminLogin = () => {
   const [loading, setLoading] = useState(false);
   const [showPass, setShowPass] = useState(false);
 
+  useEffect(() => {
+    checkIsLoggedIn("super").then(ok => ok && navigate("/admin/super"));
+  }, [navigate]);
+
+  const ALLOWED_EMAILS = ["manojalluri2727@gmail.com", "super@aaroksha.com", "admin@aaroksha.com"];
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!ALLOWED_EMAILS.includes(email.toLowerCase())) {
+      toast.error("Unauthorized: This email is not on the administrative whitelist.");
+      return;
+    }
+
     setLoading(true);
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });

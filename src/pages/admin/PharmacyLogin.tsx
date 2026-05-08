@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
   Lock, Mail, ChevronRight, Pill, Loader2, Eye, EyeOff, ArrowLeft
@@ -6,7 +6,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 
-import { createPartnerSession } from "@/lib/adminAuth";
+import { createPartnerSession, checkIsLoggedIn } from "@/lib/adminAuth";
 
 const PharmacyLogin = () => {
   const navigate = useNavigate();
@@ -15,6 +15,10 @@ const PharmacyLogin = () => {
   const [loading, setLoading] = useState(false);
   const [showPass, setShowPass] = useState(false);
 
+  useEffect(() => {
+    checkIsLoggedIn("pharmacy").then(ok => ok && navigate("/admin/pharmacy"));
+  }, [navigate]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -22,12 +26,13 @@ const PharmacyLogin = () => {
       const { data: partner, error } = await supabase
         .from("partners")
         .select("*")
-        .eq("email", email)
+        .eq("email", email.toLowerCase())
         .eq("password", password)
         .eq("type", "pharmacy")
+        .eq("status", "active")
         .single();
 
-      if (error || !partner) throw new Error("Invalid pharmacy credentials.");
+      if (error || !partner) throw new Error("Invalid pharmacy credentials or account inactive.");
 
       // ── NEW SECURITY MODEL: Create a server-side session ───────────────
       const sessionToken = await createPartnerSession(partner.partner_id, "pharmacy");

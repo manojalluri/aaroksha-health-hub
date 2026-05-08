@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useQuery } from "@tanstack/react-query";
 import { getLocalDoctors } from "@/lib/doctorsSync";
+import { useAuth } from "@/contexts/AuthContext";
 
 const avatarColors = ["#2563eb", "#7c3aed", "#059669", "#dc2626", "#d97706", "#0891b2"];
 
@@ -39,6 +40,7 @@ const genOrderId = (prefix: string) => {
 const BookAppointmentPage = () => {
   const { doctorId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const { data: doctor, isLoading: isDoctorLoading } = useQuery<Doctor | undefined>({
     queryKey: ["doctor", doctorId],
@@ -159,6 +161,7 @@ const BookAppointmentPage = () => {
         hospital_partner_id: doctor?.hospital_id || doctor?.partner_id,
         partner_id: doctor?.partner_id || doctor?.hospital_id,
         payment_method: paymentMethod,
+        user_id: user?.id || null,
       }).select().single();
       setConfirmedOrderId(newOrderId);
 

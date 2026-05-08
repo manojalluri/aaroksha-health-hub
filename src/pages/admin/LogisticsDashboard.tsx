@@ -57,7 +57,7 @@ const LogisticsDashboard = () => {
         return;
       }
       
-      const pid = getPartnerIdFromSession();
+      const pid = await getPartnerIdFromSession();
       if (pid) {
         const { data: p } = await supabase.from("partners").select("*").eq("partner_id", pid).single();
         if (p) {
@@ -87,10 +87,46 @@ const LogisticsDashboard = () => {
   const [historyFilter, setHistoryFilter] = useState("all");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  // ─── Real-time subscription ───────────────────────────────────────
+  useEffect(() => {
+    if (!partner?.partner_id) return;
+    const pid = partner.partner_id;
+
+    const rxChannel = supabase
+      .channel('logistics-rx-changes')
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'prescriptions',
+        filter: `logistics_partner_id=eq.${pid}`,
+      }, () => {
+        qc.invalidateQueries({ queryKey: ["logistics-prescriptions", pid] });
+      })
+      .subscribe();
+
+    const labChannel = supabase
+      .channel('logistics-lab-changes')
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'lab_bookings',
+        filter: `logistics_partner_id=eq.${pid}`,
+      }, () => {
+        qc.invalidateQueries({ queryKey: ["logistics-labs", pid] });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(rxChannel);
+      supabase.removeChannel(labChannel);
+    };
+  }, [partner?.partner_id, qc]);
+
+  // Helper: does this logistics partner serve pharmacy orders?
+  const servesPharmacy = !partner?.category || partner.category === "pharmacy" || partner.category === "both";
+  // Helper: does this logistics partner serve lab orders?
+  const servesLab = !partner?.category || partner.category === "lab" || partner.category === "both";
+
   // ─── Fetch data from Supabase ───────────────────────────────────
   const { data: prescriptions = [], isLoading: loadingRx } = useQuery<DeliveryOrder[]>({
     queryKey: ["logistics-prescriptions", partner?.partner_id],
-    enabled: !!partner?.partner_id && (!partner?.category || partner.category === "pharmacy"),
+    enabled: !!partner?.partner_id && servesPharmacy,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("prescriptions")
@@ -101,12 +137,12 @@ const LogisticsDashboard = () => {
       if (error) throw error;
       return (data || []).map(d => ({ ...d, type: 'prescription' })) as DeliveryOrder[];
     },
-    refetchInterval: 30000,
+    refetchInterval: 60000,
   });
 
   const { data: labBookings = [], isLoading: loadingLab } = useQuery<DeliveryOrder[]>({
     queryKey: ["logistics-labs", partner?.partner_id],
-    enabled: !!partner?.partner_id && (!partner?.category || partner.category === "lab"),
+    enabled: !!partner?.partner_id && servesLab,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("lab_bookings")
@@ -128,7 +164,7 @@ const LogisticsDashboard = () => {
         type: 'lab'
       })) as DeliveryOrder[];
     },
-    refetchInterval: 30000,
+    refetchInterval: 60000,
   });
 
   // ─── Earnings Data ──────────────────────────────────────────────────────────
@@ -136,10 +172,10 @@ const LogisticsDashboard = () => {
     const pRx = Array.isArray(prescriptions) ? prescriptions : [];
     const pLab = Array.isArray(labBookings) ? labBookings : [];
 
-    const completedRx = (partner?.category === 'pharmacy' || !partner?.category) 
+    const completedRx = servesPharmacy
       ? pRx.filter(p => p.status === 'completed') 
       : [];
-    const completedLab = (partner?.category === 'lab' || !partner?.category) 
+    const completedLab = servesLab
       ? pLab.filter(l => l.status === 'collected' || l.status === 'completed') 
       : [];
 
@@ -255,8 +291,8 @@ const LogisticsDashboard = () => {
 
         <nav className="flex-1 p-4 space-y-1">
           {[
-            { id: 'prescriptions', icon: <Package className="h-4 w-4" />, label: 'Deliveries', show: !partner?.category || partner.category === 'pharmacy' },
-            { id: 'labs', icon: <FlaskConical className="h-4 w-4" />, label: 'Collections', show: !partner?.category || partner.category === 'lab' },
+            { id: 'prescriptions', icon: <Package className="h-4 w-4" />, label: 'Deliveries', show: servesPharmacy },
+            { id: 'labs', icon: <FlaskConical className="h-4 w-4" />, label: 'Collections', show: servesLab },
             { id: 'stats', icon: <BarChart3 className="h-4 w-4" />, label: 'Performance', show: true },
           ].filter(item => item.show).map(item => (
             <button 
@@ -459,10 +495,16 @@ const LogisticsDashboard = () => {
                                 Verify & {order.type === 'lab' ? 'Collect' : 'Deliver'}
                               </button>
                            )}
-                           <button 
-                               onClick={() => setSelectedOrder(order)}
-                               className="h-8 w-8 rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center transition-all"
-                             >
+                           <a 
+                                href={`tel:${order.patient_phone}`}
+                                className="h-8 w-8 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 flex items-center justify-center transition-all"
+                              >
+                              <Phone className="h-4 w-4" />
+                            </a>
+                            <button 
+                                onClick={() => setSelectedOrder(order)}
+                                className="h-8 w-8 rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center transition-all"
+                              >
                              <MapPin className="h-4 w-4" />
                            </button>
                          </div>
@@ -496,6 +538,12 @@ const LogisticsDashboard = () => {
                   <div className="flex items-center justify-between pt-2">
                     <p className="text-[10px] font-bold text-slate-400 italic">Assign time: {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                     <div className="flex gap-2">
+                      <a 
+                        href={`tel:${order.patient_phone}`}
+                        className="h-10 w-10 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center border border-sky-100 shadow-sm"
+                      >
+                        <Phone className="h-5 w-5" />
+                      </a>
                       <button 
                         onClick={() => setSelectedOrder(order)}
                         className="h-10 w-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center border border-slate-200 shadow-sm"
@@ -562,15 +610,23 @@ const LogisticsDashboard = () => {
                     <p className="text-sm font-bold text-slate-700 leading-relaxed">{selectedOrder.delivery_address}</p>
                   </div>
                 </div>
-                <div className="flex gap-4">
-                  <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
-                    <Phone className="h-5 w-5 text-slate-500" />
+                 <div className="flex gap-4 items-center justify-between">
+                  <div className="flex gap-4">
+                    <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
+                      <Phone className="h-5 w-5 text-slate-500" />
+                    </div>
+                    <div>
+                      <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Contact</Label>
+                      <p className="text-sm font-bold text-slate-700">{selectedOrder.patient_name}</p>
+                      <p className="text-xs font-medium text-slate-500">{selectedOrder.patient_phone}</p>
+                    </div>
                   </div>
-                  <div>
-                    <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Contact</Label>
-                    <p className="text-sm font-bold text-slate-700">{selectedOrder.patient_name}</p>
-                    <p className="text-xs font-medium text-slate-500">{selectedOrder.patient_phone}</p>
-                  </div>
+                  <a 
+                    href={`tel:${selectedOrder.patient_phone}`}
+                    className="h-10 w-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100 shadow-sm hover:bg-emerald-100 transition-all"
+                  >
+                    <Phone className="h-5 w-5" />
+                  </a>
                 </div>
               </div>
 

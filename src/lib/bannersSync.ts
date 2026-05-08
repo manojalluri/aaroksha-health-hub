@@ -83,7 +83,7 @@ export const saveBannersToSupabase = async (banners: Banner[]) => {
 
 export const syncBannersFromSupabase = async () => {
   try {
-    const { data, error } = await supabase.from("platform_banners").select("*");
+    const { data, error } = await supabase.from("platform_banners").select("*").order("id", { ascending: true });
     if (data && !error && data.length > 0) {
       const mapped = data.map(b => ({
         id: b.id,
@@ -96,7 +96,7 @@ export const syncBannersFromSupabase = async () => {
         ctaColor: b.cta_color || "#2563eb",
         emoji: b.emoji || "✨",
         badge: b.badge_text || "Special",
-        // If there's an image, ALWAYS show it as-is (no text overlay)
+        // Fallback: If there's an image_url, treat it as imageOnly
         imageOnly: !!(b.image_url),
         isCustom: true
       }));

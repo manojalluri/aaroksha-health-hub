@@ -27,6 +27,7 @@ interface DoctorInfo {
 
 interface Appointment {
   id: string;
+  order_id?: string;
   patient_name: string;
   patient_phone: string;
   appointment_date: string;
@@ -34,6 +35,15 @@ interface Appointment {
   status: string;
   created_at: string;
   verification_code?: string;
+  doctor_name?: string;
+  hospital_partner_id?: string;
+  hospital_name?: string;
+  consultation_fee?: number;
+  fee?: number;
+  platform_fee?: number;
+  payment_method?: string;
+  is_priority?: boolean;
+  notes?: string;
   doctors?: DoctorInfo;
 }
 
@@ -52,11 +62,15 @@ interface Medicine {
 
 interface LabBooking {
   id: string;
+  order_id?: string;
   patient_name: string;
   patient_phone: string;
   tests: LabTest[];
   total_amount: number;
-  appointment_date?: string;
+  platform_fee?: number;
+  collection_date?: string;
+  collection_time?: string;
+  patient_address?: string;
   status: string;
   payment_status?: string;
   collection_code?: string;
@@ -131,6 +145,8 @@ const ProfilePage = () => {
   const { user, loading: authLoading, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState<"appointments" | "labs" | "prescriptions">("appointments");
   const [editing, setEditing] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const toggleExpand = (id: string) => setExpandedId(prev => prev === id ? null : id);
 
   const [profile, setProfile] = useState<Profile>(() => {
     const saved = localStorage.getItem("aaroksha_profile");
@@ -221,27 +237,36 @@ const ProfilePage = () => {
   };
 
   const fetchBookings = async (phone: string) => {
-    if (!phone) return;
+    if (!user) return; // Must be authenticated
     setLoading(true);
-    const cleanPhone = phone.trim();
     try {
-      const [apptRes, labRes, rxRes] = await Promise.all([
-        supabase.from("appointments").select("*, doctors(name, specialty)").eq("patient_phone", cleanPhone).order("created_at", { ascending: false }),
-        supabase.from("lab_bookings").select("*").eq("patient_phone", cleanPhone).order("created_at", { ascending: false }),
-        // For prescriptions, we check both phone and user_id if available
-        user?.id 
-          ? supabase.from("prescriptions").select("*").or(`patient_phone.eq.${cleanPhone},user_id.eq.${user.id}`).order("created_at", { ascending: false })
-          : supabase.from("prescriptions").select("*").eq("patient_phone", cleanPhone).order("created_at", { ascending: false }),
-      ]);
-      
-      // Fallback for appointments if join failed (data might be null if join errored)
+      // STRICT ISOLATION: Fetch strictly by user_id
+      const apptQuery = supabase
+        .from("appointments")
+        .select("*, doctors(name, specialty)")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      const labQuery = supabase
+        .from("lab_bookings")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      const rxQuery = supabase
+        .from("prescriptions")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      const [apptRes, labRes, rxRes] = await Promise.all([apptQuery, labQuery, rxQuery]);
+
       if (apptRes.error) {
-        const { data: simpleAppts } = await supabase.from("appointments").select("*").eq("patient_phone", cleanPhone).order("created_at", { ascending: false });
+        const { data: simpleAppts } = await supabase.from("appointments").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
         if (simpleAppts) setAppointments(simpleAppts);
       } else if (apptRes.data) {
         setAppointments(apptRes.data);
       }
-
       if (labRes.data) setLabBookings(labRes.data);
       if (rxRes.data) setPrescriptions(rxRes.data);
     } catch (err) {
@@ -467,59 +492,101 @@ const ProfilePage = () => {
                 {appointments.length === 0 ? (
                   <EmptyState icon={Stethoscope} title="No Appointments Yet" subtitle="Book a doctor to see your history here" action={() => navigate("/doctors")} actionLabel="Book a Doctor" />
                 ) : (
-                  appointments.map((appt) => (
-                    <div key={appt.id} className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-xl bg-blue-100 flex items-center justify-center shrink-0">
-                            <Stethoscope className="h-5 w-5 text-blue-600" />
+                  appointments.map((appt) => {
+                    const isExpanded = expandedId === appt.id;
+                    return (
+                      <div 
+                        key={appt.id} 
+                        className={`bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden transition-all duration-300 ${isExpanded ? 'ring-2 ring-blue-100 ring-offset-2' : ''}`}
+                      >
+                        {/* Compact Header (Always visible) */}
+                        <div 
+                          className="p-4 cursor-pointer hover:bg-slate-50 transition-colors"
+                          onClick={() => toggleExpand(appt.id)}
+                        >
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-xl bg-blue-100 flex items-center justify-center shrink-0">
+                                <Stethoscope className="h-5 w-5 text-blue-600" />
+                              </div>
+                              <div>
+                                <p className="font-black text-slate-800 text-sm">
+                                  {appt.doctors?.name || appt.doctor_name || "Doctor Appointment"}
+                                </p>
+                                <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">
+                                  {appt.doctors?.specialty || "OP Consultation"}
+                                </p>
+                              </div>
+                            </div>
+                            <StatusBadge status={appt.status} />
                           </div>
-                          <div>
-                            <p className="font-black text-slate-800 text-sm">
-                              {appt.doctors?.name || "Doctor Appointment"}
-                            </p>
-                            <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">
-                              {appt.doctors?.specialty || "OP Consultation"}
-                            </p>
+                          
+                          <div className="flex items-center justify-between pt-2 border-t border-slate-50">
+                            <div className="flex items-center gap-4">
+                              <div className="flex items-center gap-1.5">
+                                <Calendar className="h-3 w-3 text-slate-400" />
+                                <p className="text-[10px] font-bold text-slate-500">{formatDate(appt.appointment_date)}</p>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <Clock className="h-3 w-3 text-slate-400" />
+                                <p className="text-[10px] font-bold text-slate-500">{appt.appointment_time}</p>
+                              </div>
+                            </div>
+                            <ChevronRight className={`h-4 w-4 text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                           </div>
                         </div>
-                        <StatusBadge status={appt.status} />
+
+                        {/* Expanded Details */}
+                        {isExpanded && (
+                          <div className="px-4 pb-4 bg-slate-50 border-t border-slate-100 pt-3">
+                            <div className="grid grid-cols-2 gap-y-3 gap-x-4 mb-4">
+                              <div>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Hospital</p>
+                                <p className="text-xs font-bold text-slate-700">{appt.hospital_name || "Not Specified"}</p>
+                              </div>
+                              <div>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Amount Paid</p>
+                                <p className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                                  <IndianRupee className="h-3 w-3" />
+                                  {appt.fee || appt.consultation_fee || "N/A"}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Patient Name</p>
+                                <p className="text-xs font-bold text-slate-700">{appt.patient_name}</p>
+                              </div>
+                              <div>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Order ID</p>
+                                <p className="text-xs font-bold text-slate-700">#{appt.order_id || appt.id.slice(0, 8).toUpperCase()}</p>
+                              </div>
+                            </div>
+                            
+                            {/* Verification Code Display */}
+                            {appt.verification_code && (appt.status === 'confirmed') && (
+                              <div className="mt-2 bg-blue-100/50 border border-blue-200 rounded-xl p-3 flex items-center justify-between">
+                                <div>
+                                  <p className="text-[9px] font-black uppercase tracking-widest text-blue-600 mb-0.5">Verification Code</p>
+                                  <p className="text-base font-black tracking-widest text-blue-800">{appt.verification_code}</p>
+                                </div>
+                                <p className="text-[10px] text-blue-600 max-w-[120px] leading-tight text-right">
+                                  Share this code at the hospital reception.
+                                </p>
+                              </div>
+                            )}
+                            {appt.verification_code && (appt.status === 'completed') && (
+                              <div className="mt-2 bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center justify-between">
+                                <div>
+                                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600 mb-0.5">Verification Code</p>
+                                  <p className="text-base font-black tracking-widest text-emerald-800">{appt.verification_code} ✓</p>
+                                </div>
+                                <p className="text-[10px] font-bold text-emerald-600">Consultation Completed</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <div className="flex items-center gap-4 pt-3 border-t border-slate-50">
-                        <div className="flex items-center gap-1.5">
-                          <Calendar className="h-3 w-3 text-slate-400" />
-                          <p className="text-[10px] font-bold text-slate-500">{formatDate(appt.appointment_date)}</p>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <Clock className="h-3 w-3 text-slate-400" />
-                          <p className="text-[10px] font-bold text-slate-500">{appt.appointment_time}</p>
-                        </div>
-                        <p className="text-[9px] font-bold text-slate-300 ml-auto">#{appt.id.slice(0, 8).toUpperCase()}</p>
-                      </div>
-                      
-                      {/* Verification Code Display */}
-                      {appt.verification_code && (appt.status === 'confirmed') && (
-                        <div className="mt-3 bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center justify-between">
-                          <div>
-                            <p className="text-[9px] font-black uppercase tracking-widest text-blue-600 mb-0.5">Verification Code</p>
-                            <p className="text-sm font-black tracking-widest text-blue-800">{appt.verification_code}</p>
-                          </div>
-                          <p className="text-[10px] text-blue-600 max-w-[120px] leading-tight">
-                            Share this code at the hospital reception.
-                          </p>
-                        </div>
-                      )}
-                      {appt.verification_code && (appt.status === 'completed') && (
-                        <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center justify-between">
-                          <div>
-                            <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600 mb-0.5">Verification Code</p>
-                            <p className="text-sm font-black tracking-widest text-emerald-800">{appt.verification_code} ✓</p>
-                          </div>
-                          <p className="text-[10px] font-bold text-emerald-600">Consultation Completed</p>
-                        </div>
-                      )}
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             )}
@@ -532,51 +599,92 @@ const ProfilePage = () => {
                 ) : (
                   labBookings.map((booking) => {
                     const tests = Array.isArray(booking.tests) ? booking.tests : [];
+                    const isExpanded = expandedId === booking.id;
                     return (
-                      <div key={booking.id} className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-xl bg-purple-100 flex items-center justify-center shrink-0">
-                              <TestTube className="h-5 w-5 text-purple-600" />
+                      <div 
+                        key={booking.id} 
+                        className={`bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden transition-all duration-300 ${isExpanded ? 'ring-2 ring-purple-100 ring-offset-2' : ''}`}
+                      >
+                        {/* Compact Header */}
+                        <div 
+                          className="p-4 cursor-pointer hover:bg-slate-50 transition-colors"
+                          onClick={() => toggleExpand(booking.id)}
+                        >
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-xl bg-purple-100 flex items-center justify-center shrink-0">
+                                <TestTube className="h-5 w-5 text-purple-600" />
+                              </div>
+                              <div>
+                                <p className="font-black text-slate-800 text-sm">
+                                  {tests.length} Test{tests.length !== 1 ? "s" : ""}
+                                </p>
+                                <p className="text-[10px] font-bold text-slate-400 max-w-[160px] truncate">
+                                  {tests.map((t) => t.name).join(", ")}
+                                </p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="font-black text-slate-800 text-sm">
-                                {tests.length} Test{tests.length !== 1 ? "s" : ""}
-                              </p>
-                              <p className="text-[10px] font-bold text-slate-400 max-w-[160px] truncate">
-                                {tests.map((t) => t.name).join(", ")}
-                              </p>
+                            <StatusBadge status={booking.status} />
+                          </div>
+                          <div className="flex items-center justify-between pt-2 border-t border-slate-50">
+                            <div className="flex items-center gap-4">
+                              <div className="flex items-center gap-1.5">
+                                <Calendar className="h-3 w-3 text-slate-400" />
+                                <p className="text-[10px] font-bold text-slate-500">{formatDate(booking.collection_date || booking.created_at)}</p>
+                              </div>
+                              {(booking.collection_time) && (
+                                <div className="flex items-center gap-1.5">
+                                  <Clock className="h-3 w-3 text-slate-400" />
+                                  <p className="text-[10px] font-bold text-slate-500">{booking.collection_time}</p>
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <p className="font-black text-purple-600 text-sm">₹{booking.total_amount}</p>
+                              <ChevronRight className={`h-4 w-4 text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                             </div>
                           </div>
-                          <StatusBadge status={booking.status} />
-                        </div>
-                        <div className="flex items-center justify-between pt-3 border-t border-slate-50">
-                          <div className="flex items-center gap-1.5">
-                            <Calendar className="h-3 w-3 text-slate-400" />
-                            <p className="text-[10px] font-bold text-slate-500">{formatDate(booking.created_at)}</p>
-                          </div>
-                          <p className="font-black text-purple-600 text-sm">₹{booking.total_amount}</p>
                         </div>
                         
-                        {/* Collection Code Display */}
-                        {booking.collection_code && (booking.status === 'confirmed' || booking.status === 'processing') && (
-                          <div className="mt-3 bg-violet-50 border border-violet-200 rounded-xl p-3 flex items-center justify-between">
-                            <div>
-                              <p className="text-[9px] font-black uppercase tracking-widest text-violet-600 mb-0.5">Collection Code</p>
-                              <p className="text-sm font-black tracking-widest text-violet-800">{booking.collection_code}</p>
+                        {/* Expanded Details */}
+                        {isExpanded && (
+                          <div className="px-4 pb-4 bg-slate-50 border-t border-slate-100 pt-3">
+                            <div className="grid grid-cols-2 gap-y-3 gap-x-4 mb-4">
+                              <div>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Order ID</p>
+                                <p className="text-xs font-bold text-slate-700">#{booking.order_id || booking.id.slice(0, 8).toUpperCase()}</p>
+                              </div>
+                              <div>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Patient Name</p>
+                                <p className="text-xs font-bold text-slate-700">{booking.patient_name}</p>
+                              </div>
+                              <div className="col-span-2">
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Collection Address</p>
+                                <p className="text-xs font-bold text-slate-700">{booking.patient_address || "N/A"}</p>
+                              </div>
                             </div>
-                            <p className="text-[10px] text-violet-600 max-w-[120px] leading-tight">
-                              Share this code with the lab technician.
-                            </p>
-                          </div>
-                        )}
-                        {booking.collection_code && (booking.status === 'collected' || booking.status === 'completed') && (
-                          <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center justify-between">
-                            <div>
-                              <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600 mb-0.5">Collection Code</p>
-                              <p className="text-sm font-black tracking-widest text-emerald-800">{booking.collection_code} ✓</p>
-                            </div>
-                            <p className="text-[10px] font-bold text-emerald-600">Sample Collected</p>
+
+                            {/* Collection Code Display */}
+                            {booking.collection_code && (booking.status === 'confirmed' || booking.status === 'processing') && (
+                              <div className="mt-2 bg-violet-100/50 border border-violet-200 rounded-xl p-3 flex items-center justify-between">
+                                <div>
+                                  <p className="text-[9px] font-black uppercase tracking-widest text-violet-600 mb-0.5">Collection Code</p>
+                                  <p className="text-base font-black tracking-widest text-violet-800">{booking.collection_code}</p>
+                                </div>
+                                <p className="text-[10px] text-violet-600 max-w-[120px] leading-tight text-right">
+                                  Share this code with the lab technician.
+                                </p>
+                              </div>
+                            )}
+                            {booking.collection_code && (booking.status === 'collected' || booking.status === 'completed') && (
+                              <div className="mt-2 bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center justify-between">
+                                <div>
+                                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600 mb-0.5">Collection Code</p>
+                                  <p className="text-base font-black tracking-widest text-emerald-800">{booking.collection_code} ✓</p>
+                                </div>
+                                <p className="text-[10px] font-bold text-emerald-600">Sample Collected</p>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -598,6 +706,8 @@ const ProfilePage = () => {
                       rx={rx}
                       onPayNow={() => handlePayNow(rx)}
                       paying={payingId === rx.id}
+                      isExpanded={expandedId === rx.id}
+                      onToggle={() => toggleExpand(rx.id)}
                     />
                   ))
                 )}
@@ -658,10 +768,14 @@ const PrescriptionCard = ({
   rx,
   onPayNow,
   paying,
+  isExpanded,
+  onToggle,
 }: {
   rx: Prescription;
   onPayNow: () => void;
   paying: boolean;
+  isExpanded: boolean;
+  onToggle: () => void;
 }) => {
   const { copied, copy } = useCopy();
   const meds = Array.isArray(rx.medicines) ? rx.medicines : [];
@@ -674,36 +788,71 @@ const PrescriptionCard = ({
   const isCompleted = rx.status === "completed";
 
   return (
-    <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-      {/* Header */}
-      <div className="px-4 pt-4 pb-3 flex items-start justify-between gap-2">
-        <div>
-          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-            Order ID: {rx.order_id || rx.id.slice(0, 8).toUpperCase()}
-          </p>
-          <p className="text-[10px] font-bold text-slate-400 mt-0.5">
-            <Calendar className="h-3 w-3 inline mr-1 text-slate-300" />
-            {formatDate(rx.created_at)}
-          </p>
+    <div className={`bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden transition-all duration-300 ${isExpanded ? 'ring-2 ring-blue-100 ring-offset-2' : ''}`}>
+      {/* Header (Always Visible) */}
+      <div 
+        className="px-4 py-4 cursor-pointer hover:bg-slate-50 transition-colors"
+        onClick={onToggle}
+      >
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
+              <Package className="h-5 w-5 text-orange-600" />
+            </div>
+            <div>
+              <p className="font-black text-slate-800 text-sm">Medicine Order</p>
+              <p className="text-[10px] font-bold text-slate-400 mt-0.5">
+                {meds.length} Item{meds.length !== 1 ? 's' : ''}
+              </p>
+            </div>
+          </div>
+          <StatusBadge status={rx.status} />
         </div>
-        <StatusBadge status={rx.status} />
+        
+        <div className="flex items-center justify-between pt-2 border-t border-slate-50">
+          <div className="flex items-center gap-1.5">
+            <Calendar className="h-3 w-3 text-slate-400" />
+            <p className="text-[10px] font-bold text-slate-500">{formatDate(rx.created_at)}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {rx.grand_total && rx.grand_total > 0 && (
+              <p className="font-black text-emerald-600 text-sm">₹{rx.grand_total}</p>
+            )}
+            <ChevronRight className={`h-4 w-4 text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+          </div>
+        </div>
       </div>
 
-      {/* Express badge */}
-      {rx.is_express_delivery && (
-        <div className="mx-4 mb-3 bg-amber-50 border border-amber-200 rounded-xl px-3 py-1.5 flex items-center gap-2">
-          <span className="text-base">⚡</span>
-          <span className="text-[10px] font-black text-amber-700 uppercase tracking-wider">Express Delivery</span>
-        </div>
-      )}
+      {/* Expanded Content */}
+      {isExpanded && (
+        <div className="bg-slate-50 border-t border-slate-100 pt-3 pb-2">
+          {/* Order Meta */}
+          <div className="grid grid-cols-2 gap-y-3 gap-x-4 px-4 mb-4">
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Order ID</p>
+              <p className="text-xs font-bold text-slate-700">#{rx.order_id || rx.id.slice(0, 8).toUpperCase()}</p>
+            </div>
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Patient Name</p>
+              <p className="text-xs font-bold text-slate-700">{rx.patient_name}</p>
+            </div>
+          </div>
 
-      {/* Pharmacist Review Stage */}
-      {meds.length === 0 && rx.status === "pending" && (
-        <div className="mx-4 mb-3 bg-amber-50 border border-amber-100 rounded-2xl p-3 flex items-center gap-2">
-          <span className="text-base">⏳</span>
-          <p className="text-xs font-bold text-amber-700">Pharmacist is reviewing your prescription</p>
-        </div>
-      )}
+          {/* Express badge */}
+          {rx.is_express_delivery && (
+            <div className="mx-4 mb-3 bg-amber-50 border border-amber-200 rounded-xl px-3 py-1.5 flex items-center gap-2">
+              <span className="text-base">⚡</span>
+              <span className="text-[10px] font-black text-amber-700 uppercase tracking-wider">Express Delivery</span>
+            </div>
+          )}
+
+          {/* Pharmacist Review Stage */}
+          {meds.length === 0 && rx.status === "pending" && (
+            <div className="mx-4 mb-3 bg-amber-50 border border-amber-100 rounded-2xl p-3 flex items-center gap-2">
+              <span className="text-base">⏳</span>
+              <p className="text-xs font-bold text-amber-700">Pharmacist is reviewing your prescription</p>
+            </div>
+          )}
 
       {/* Rejection note */}
       {rx.status === "rejected" && rx.admin_note && (
@@ -805,59 +954,31 @@ const PrescriptionCard = ({
         </div>
       )}
 
-      {/* ── DELIVERY CODE (shown after payment, when dispatched or completed) ── */}
-      {hasCode && (isDispatched || isCompleted) && (
-        <div className={`mx-4 mb-4 rounded-2xl p-4 border ${isCompleted ? "bg-emerald-50 border-emerald-200" : "bg-violet-50 border-violet-200"}`}>
-          <div className="flex items-center gap-2 mb-3">
-            <div className={`h-8 w-8 rounded-xl flex items-center justify-center ${isCompleted ? "bg-emerald-100" : "bg-violet-100"}`}>
-              <KeyRound className={`h-4 w-4 ${isCompleted ? "text-emerald-600" : "text-violet-600"}`} />
-            </div>
-            <div>
-              <p className={`text-[10px] font-black uppercase tracking-widest ${isCompleted ? "text-emerald-700" : "text-violet-700"}`}>
-                {isCompleted ? "Order Delivered ✓" : "Delivery Confirmation Code"}
-              </p>
-              <p className={`text-[10px] font-medium ${isCompleted ? "text-emerald-600" : "text-violet-600"}`}>
-                {isCompleted
-                  ? "Your order has been successfully delivered"
-                  : "Share this code with the delivery partner"}
-              </p>
-            </div>
-          </div>
-
-          {/* Code display */}
-          <div
-            className={`relative flex items-center justify-between rounded-2xl px-5 py-4 border-2 border-dashed cursor-pointer ${
-              isCompleted ? "bg-emerald-100/50 border-emerald-300" : "bg-white border-violet-300"
-            }`}
-            onClick={() => copy(rx.delivery_code!)}
-          >
-            <div>
-              <p className={`text-[9px] font-black uppercase tracking-widest mb-0.5 ${isCompleted ? "text-emerald-500" : "text-violet-500"}`}>
-                Delivery Code
-              </p>
-              <p className={`text-3xl font-black tracking-[0.3em] ${isCompleted ? "text-emerald-700" : "text-violet-700"}`}>
-                {rx.delivery_code}
+      {/* Verification Code Display (Consistent with OP/Lab) */}
+      {hasCode && (
+        <div className="mx-4 mb-4">
+          {!isCompleted ? (
+            <div className="bg-violet-100/50 border border-violet-200 rounded-xl p-3 flex items-center justify-between">
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-violet-600 mb-0.5">Delivery Code</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-base font-black tracking-widest text-violet-800">{rx.delivery_code}</p>
+                  <button onClick={() => copy(rx.delivery_code!)} className="text-violet-400 hover:text-violet-600">
+                    {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                  </button>
+                </div>
+              </div>
+              <p className="text-[10px] text-violet-600 max-w-[140px] leading-tight text-right font-medium">
+                Share this code with the delivery partner upon receiving medicines.
               </p>
             </div>
-            <button
-              onClick={(e) => { e.stopPropagation(); copy(rx.delivery_code!); }}
-              className={`h-10 w-10 rounded-xl flex items-center justify-center transition-all ${
-                copied
-                  ? "bg-emerald-100 text-emerald-600"
-                  : isCompleted ? "bg-emerald-200 text-emerald-700" : "bg-violet-100 text-violet-600"
-              }`}
-            >
-              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-            </button>
-          </div>
-
-          {!isCompleted && (
-            <div className="mt-3 flex items-start gap-2">
-              <ShieldCheck className="h-3.5 w-3.5 text-violet-400 shrink-0 mt-0.5" />
-              <p className="text-[10px] font-medium text-violet-600">
-                The delivery partner must enter this code to mark your order as delivered.
-                Do not share it until you receive your medicines.
-              </p>
+          ) : (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center justify-between">
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600 mb-0.5">Delivery Code</p>
+                <p className="text-base font-black tracking-widest text-emerald-800">{rx.delivery_code} ✓</p>
+              </div>
+              <p className="text-[10px] font-bold text-emerald-600">Order Delivered Successfully</p>
             </div>
           )}
         </div>
@@ -873,15 +994,17 @@ const PrescriptionCard = ({
         </div>
       )}
 
-      {/* Payment status for dispatched orders */}
-      {isPaid && isDispatched && rx.delivery_code && (
-        <div className="mx-4 mb-2 flex items-center gap-1.5">
-          <Truck className="h-3.5 w-3.5 text-violet-400 shrink-0" />
-          <p className="text-[10px] font-bold text-violet-600">Delivery partner is on the way</p>
+          {/* Payment status for dispatched orders */}
+          {isPaid && isDispatched && rx.delivery_code && (
+            <div className="mx-4 mb-2 flex items-center gap-1.5">
+              <Truck className="h-3.5 w-3.5 text-violet-400 shrink-0" />
+              <p className="text-[10px] font-bold text-violet-600">Delivery partner is on the way</p>
+            </div>
+          )}
+
+          <div className="h-2" />
         </div>
       )}
-
-      <div className="h-4" />
     </div>
   );
 };

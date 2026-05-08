@@ -141,6 +141,7 @@ const LabTestsPage = () => {
         collection_time: selectedTime,
         status: "pending",
         payment_status: "pending",
+        user_id: user?.id || null,
       }).select().single();
       setConfirmedOrderId(newOrderId);
 

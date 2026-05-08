@@ -7,7 +7,7 @@ import {
   TrendingUp, Activity, Loader2, KeyRound, Edit2, Trash2,
   ArrowUpRight, AlertCircle, Calendar, Search, Truck,
   ChevronUp, ChevronDown, ImagePlus, Palette, Link2, GripVertical, LayoutTemplate,
-  MapPin, Package, UserCheck, Ban, CheckCircle
+  MapPin, Package, UserCheck, Ban, CheckCircle, ClipboardList
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
@@ -18,7 +18,7 @@ import { useNavigate } from "react-router-dom";
 import { verifySuperAdminSession, clearAdminSession } from "@/lib/adminAuth";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Tab = "overview" | "live" | "users" | "partners" | "payouts" | "credentials" | "commissions" | "transactions" | "settings" | "lookup" | "banners" | "logistics_hub";
+type Tab = "overview" | "live" | "users" | "partners" | "payouts" | "credentials" | "commissions" | "transactions" | "settings" | "lookup" | "banners" | "logistics_hub" | "incomplete_tasks";
 
 interface BookingItem {
   id: string;
@@ -225,7 +225,7 @@ const SuperAdminDashboard = () => {
   const [paidPartners, setPaidPartners] = useState<Record<string, boolean>>({});
   const [editingPartner, setEditingPartner] = useState<Partner | null>(null);
   const [addLoading, setAddLoading] = useState(false);
-  const [dateFilter, setDateFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("today");
   const [customDate, setCustomDate] = useState({ start: "", end: "" });
   const [liveFilter, setLiveFilter] = useState("all");
   // Order Lookup state
@@ -253,15 +253,40 @@ const SuperAdminDashboard = () => {
   const [platformBanners, setPlatformBanners] = useState<Banner[]>(getBanners());
   const [bannerPreviewIdx, setBannerPreviewIdx] = useState(0);
 
-  const persistBanners = (updated: Banner[]) => {
+  const persistBanners = async (updated: Banner[]) => {
     setPlatformBanners(updated);
     saveBanners(updated);
-    supabase.from("platform_banners").upsert(updated.map((b, idx) => ({
-      id: b.id.startsWith("default") ? `00000000-0000-0000-0000-00000000000${idx}` : b.id,
+    
+    // 1. Get current IDs from DB to identify deletions
+    const { data: currentDb } = await supabase.from("platform_banners").select("id");
+    const currentIds = (currentDb || []).map(row => row.id);
+    
+    // 2. Map new banners to their DB format IDs
+    const newMapped = updated.map((b, idx) => ({
+      ...b,
+      dbId: b.id.startsWith("default") ? `00000000-0000-0000-0000-00000000000${idx}` : b.id
+    }));
+    const newIds = newMapped.map(b => b.dbId);
+    
+    // 3. Find IDs to delete
+    const toDelete = currentIds.filter(id => !newIds.includes(id));
+    
+    // 4. Perform Deletions
+    if (toDelete.length > 0) {
+      await supabase.from("platform_banners").delete().in("id", toDelete);
+    }
+    
+    // 5. Upsert new list
+    const { error } = await supabase.from("platform_banners").upsert(newMapped.map(b => ({
+      id: b.dbId,
       title: b.title, subtitle: b.subtitle, image_url: b.image || null,
       link_to: b.to, cta_text: b.cta, gradient: b.gradient,
-      cta_color: b.ctaColor, emoji: b.emoji, badge_text: b.badge, is_active: true,
-    }))).then(({ error }) => { if (!error) toast.success("Banners saved & live!"); });
+      cta_color: b.ctaColor, emoji: b.emoji, badge_text: b.badge, 
+      is_active: true
+    })));
+    
+    if (!error) toast.success("Banners saved & live!");
+    else toast.error("Sync failed: " + error.message);
   };
 
   const handleUpdateBanner = (id: string, key: keyof Banner, value: string) => {
@@ -335,7 +360,7 @@ const SuperAdminDashboard = () => {
           cta_color: banner.ctaColor,
           emoji: banner.emoji,
           badge_text: banner.badge,
-          is_active: true,
+          is_active: true
         });
       }
 
@@ -633,6 +658,7 @@ const SuperAdminDashboard = () => {
   // ─── Nav Items ─────────────────────────────────────────────────────────────
   const NAV = [
     { id: "overview" as Tab,      label: "Overview",       icon: <Activity className="h-4 w-4" /> },
+    { id: "incomplete_tasks" as Tab, label: "Incomplete Tasks", icon: <ClipboardList className="h-4 w-4" /> },
     { id: "live" as Tab,          label: "Live Feed",      icon: <RefreshCw className="h-4 w-4" /> },
     { id: "lookup" as Tab,        label: "Order Lookup",   icon: <Search className="h-4 w-4" /> },
     { id: "users" as Tab,         label: "Users",          icon: <Users className="h-4 w-4" /> },
@@ -793,6 +819,134 @@ const SuperAdminDashboard = () => {
               </div>
             </div>
           )}
+
+          {/* ── INCOMPLETE TASKS ────────────────────────────────────────── */}
+          {activeTab === "incomplete_tasks" && (() => {
+            const incompleteOPD = appointments.filter(a => a.status === "pending").filter(filterByDate);
+            const incompleteLab = labBookings.filter(l => ["pending", "confirmed", "collected", "processing"].includes(l.status)).filter(filterByDate);
+            const incompletePharm = prescriptions.filter(p => ["pending", "reviewed", "dispatched"].includes(p.status)).filter(filterByDate);
+            
+            const totalIncomplete = incompleteOPD.length + incompleteLab.length + incompletePharm.length;
+
+            return (
+              <div className="space-y-6">
+                {/* Filters */}
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 bg-amber-50 rounded-xl flex items-center justify-center">
+                      <Clock className="h-5 w-5 text-amber-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-black text-slate-900">Incomplete Tasks</h3>
+                      <p className="text-xs text-slate-400">{totalIncomplete} total tasks awaiting completion</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm">
+                    <div className="flex bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 items-center gap-3">
+                      <Calendar className="h-4 w-4 text-slate-400" />
+                      <select value={dateFilter} onChange={e => setDateFilter(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 outline-none w-40">
+                        <option value="today">Today Only</option>
+                        <option value="yesterday">Yesterday</option>
+                        <option value="week">Past 7 Days</option>
+                        <option value="month">Past 30 Days</option>
+                        <option value="all">All Time</option>
+                        <option value="custom">Custom Range</option>
+                      </select>
+                    </div>
+                    {dateFilter === "custom" && (
+                      <div className="flex gap-2">
+                        <input type="date" value={customDate.start} onChange={e => setCustomDate({...customDate, start: e.target.value})} className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 outline-none" />
+                        <input type="date" value={customDate.end} onChange={e => setCustomDate({...customDate, end: e.target.value})} className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 outline-none" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Summary Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="h-8 w-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center"><Stethoscope className="h-4 w-4" /></div>
+                      <p className="text-xs font-black text-slate-400 uppercase tracking-widest">OPD Pending</p>
+                    </div>
+                    <p className="text-3xl font-black text-slate-900">{incompleteOPD.length}</p>
+                    <p className="text-[10px] text-slate-400 mt-1">Appointments to be confirmed</p>
+                  </div>
+                  <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="h-8 w-8 rounded-lg bg-violet-50 text-violet-600 flex items-center justify-center"><FlaskConical className="h-4 w-4" /></div>
+                      <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Lab In-Progress</p>
+                    </div>
+                    <p className="text-3xl font-black text-slate-900">{incompleteLab.length}</p>
+                    <p className="text-[10px] text-slate-400 mt-1">Pending collection or results</p>
+                  </div>
+                  <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="h-8 w-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center"><Pill className="h-4 w-4" /></div>
+                      <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Pharmacy Orders</p>
+                    </div>
+                    <p className="text-3xl font-black text-slate-900">{incompletePharm.length}</p>
+                    <p className="text-[10px] text-slate-400 mt-1">Pricing or delivery pending</p>
+                  </div>
+                </div>
+
+                {/* Unified Task List */}
+                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                  <div className="px-6 py-4 border-b border-slate-50 bg-slate-50/50">
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Outstanding Assignments</h4>
+                  </div>
+                  <div className="divide-y divide-slate-50">
+                    {[
+                      ...incompleteOPD.map(o => ({ ...o, taskType: 'opd', timestamp: new Date(o.created_at).getTime() })),
+                      ...incompleteLab.map(l => ({ ...l, taskType: 'lab', timestamp: new Date(l.created_at).getTime() })),
+                      ...incompletePharm.map(p => ({ ...p, taskType: 'pharmacy', timestamp: new Date(p.created_at).getTime() }))
+                    ]
+                    .sort((a, b) => b.timestamp - a.timestamp)
+                    .map((task, i) => {
+                      const icon = task.taskType === 'opd' ? <Stethoscope className="h-4 w-4" /> : task.taskType === 'lab' ? <FlaskConical className="h-4 w-4" /> : <Pill className="h-4 w-4" />;
+                      const color = task.taskType === 'opd' ? "text-blue-600 bg-blue-50" : task.taskType === 'lab' ? "text-violet-600 bg-violet-50" : "text-emerald-600 bg-emerald-50";
+                      
+                      return (
+                        <div key={`${task.taskType}-${task.id}`} className="px-6 py-4 flex items-center gap-4 hover:bg-slate-50/50 transition-colors">
+                          <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${color}`}>{icon}</div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="font-bold text-slate-900 text-sm truncate">{task.patient_name}</p>
+                              <span className="text-[10px] font-black font-mono text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md tracking-wider shrink-0">{task.order_id}</span>
+                            </div>
+                            <p className="text-xs text-slate-400 mt-0.5 truncate">
+                              {task.taskType === 'opd' && `Doctor Appointment · Status: ${task.status}`}
+                              {task.taskType === 'lab' && `Lab Test Booking · Status: ${task.status}`}
+                              {task.taskType === 'pharmacy' && `Medicine Order · Status: ${task.status}`}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-xs font-bold text-slate-700">{new Date(task.timestamp).toLocaleDateString()}</p>
+                            <p className="text-[10px] text-slate-400">{new Date(task.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                          </div>
+                          <button 
+                            onClick={() => { setLookupId(task.order_id); handleLookup(); setActiveTab("lookup"); }}
+                            className="h-8 w-8 rounded-lg bg-slate-100 text-slate-400 hover:text-blue-600 hover:bg-blue-50 flex items-center justify-center transition-all"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                    {totalIncomplete === 0 && (
+                      <div className="px-6 py-16 text-center">
+                        <div className="h-12 w-12 bg-emerald-50 text-emerald-500 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                          <CheckCircle className="h-6 w-6" />
+                        </div>
+                        <p className="text-sm font-bold text-slate-600">All caught up!</p>
+                        <p className="text-xs text-slate-400">No incomplete tasks found for the selected period.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* ── LIVE FEED ──────────────────────────────────────────────── */}
           {activeTab === "live" && (

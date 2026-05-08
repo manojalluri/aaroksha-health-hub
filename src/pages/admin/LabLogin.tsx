@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
   Lock, Mail, ChevronRight, FlaskConical, Loader2, Eye, EyeOff, ArrowLeft
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { createPartnerSession } from "@/lib/adminAuth";
+import { createPartnerSession, checkIsLoggedIn } from "@/lib/adminAuth";
 
 const LabLogin = () => {
   const navigate = useNavigate();
@@ -14,6 +14,10 @@ const LabLogin = () => {
   const [loading, setLoading] = useState(false);
   const [showPass, setShowPass] = useState(false);
 
+  useEffect(() => {
+    checkIsLoggedIn("lab").then(ok => ok && navigate("/admin/lab"));
+  }, [navigate]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -21,12 +25,13 @@ const LabLogin = () => {
       const { data: partner, error } = await supabase
         .from("partners")
         .select("id, partner_id, name, type")
-        .eq("email", email)
+        .eq("email", email.toLowerCase())
         .eq("password", password)
         .eq("type", "lab")
+        .eq("status", "active")
         .single();
 
-      if (error || !partner) throw new Error("Invalid lab credentials.");
+      if (error || !partner) throw new Error("Invalid lab credentials or account inactive.");
 
       const token = await createPartnerSession(partner.partner_id, "lab");
       if (!token) throw new Error("Session could not be created. Try again.");

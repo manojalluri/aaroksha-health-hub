@@ -56,6 +56,7 @@ interface LabBooking {
   status: string;
   tests: LabTestItem[];
   collection_code?: string;
+  logistics_partner_id?: string;
   created_at: string;
 }
 
@@ -250,6 +251,7 @@ const LabDashboard = () => {
   const [isEditTestOpen, setIsEditTestOpen] = useState(false);
   const [editingTest, setEditingTest] = useState<LabTest | null>(null);
   const [selectedTechnician, setSelectedTechnician] = useState("");
+  const [selectedLogisticsPartnerId, setSelectedLogisticsPartnerId] = useState("");
   const [collectionCodeInput, setCollectionCodeInput] = useState("");
 
   // ── Results Upload / WhatsApp State ─────────────────────────────────────────
@@ -476,7 +478,7 @@ const LabDashboard = () => {
         .from("partners")
         .select("*")
         .eq("type", "logistics")
-        .eq("category", "lab")
+        .in("category", ["lab", "both"])
         .eq("status", "active");
       if (error) throw error;
       return data || [];
@@ -485,18 +487,22 @@ const LabDashboard = () => {
 
   // ── Mutations ───────────────────────────────────────────────────────────────
   const updateBookingMutation = useMutation({
-    mutationFn: async ({ id, updates }: { id: string; updates: Partial<any> }) => {
-      // Auto-assign this booking to the current lab admin if it was unassigned
-      const pId = user?.user_metadata?.partner_id;
-      const finalUpdates = { ...updates, partner_id: pId };
+    mutationFn: async ({ id, updates, closeDialog = true }: { id: string; updates: Partial<any>; closeDialog?: boolean }) => {
+      // Use session-based partnerId; only set partner_id if not explicitly provided in updates
+      const sessionPartnerId = partnerId;
+      const finalUpdates: any = { ...updates };
+      if (sessionPartnerId && !('partner_id' in finalUpdates)) {
+        finalUpdates.partner_id = sessionPartnerId;
+      }
       const { error } = await supabase.from("lab_bookings").update(finalUpdates).eq("id", id);
       if (error) throw error;
+      return { closeDialog };
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["admin-lab-bookings"] });
       queryClient.invalidateQueries({ queryKey: ["lab-tests"] });
       toast.success("Booking updated successfully");
-      setIsDetailsOpen(false);
+      if (result?.closeDialog) setIsDetailsOpen(false);
     },
     onError: (err: any) => {
       console.error("Booking Update Error:", err);
@@ -1735,14 +1741,8 @@ const LabDashboard = () => {
                   </p>
                   <div className="relative">
                     <select
-                      value={selectedBooking?.logistics_partner_id || ""}
-                      onChange={(e) => {
-                        const lpId = e.target.value;
-                        updateBookingMutation.mutate({
-                          id: selectedBooking?.id,
-                          updates: { logistics_partner_id: lpId }
-                        });
-                      }}
+                      value={selectedLogisticsPartnerId}
+                      onChange={(e) => setSelectedLogisticsPartnerId(e.target.value)}
                       className="w-full h-11 bg-indigo-50 border border-indigo-100 rounded-xl px-4 pr-10 text-xs font-bold text-indigo-700 outline-none appearance-none cursor-pointer focus:border-indigo-400 transition-all"
                     >
                       <option value="">Select Partner</option>
@@ -1752,6 +1752,9 @@ const LabDashboard = () => {
                     </select>
                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-3 w-3 text-indigo-400 pointer-events-none" />
                   </div>
+                  {selectedLogisticsPartnerId && selectedLogisticsPartnerId !== (selectedBooking?.logistics_partner_id || "") && (
+                    <p className="text-[9px] font-bold text-indigo-500 mt-1">⚠ Unsaved – will apply on Confirm</p>
+                  )}
                 </div>
               </div>
 
@@ -1774,15 +1777,16 @@ const LabDashboard = () => {
               <div className="space-y-3 pt-2">
                 <div className="grid grid-cols-2 gap-3">
                   <button
-                    onClick={() =>
-                      updateBookingMutation.mutate({
-                        id: selectedBooking?.id,
-                        updates: {
-                          status: "confirmed",
-                          technician: selectedTechnician || selectedBooking?.technician,
-                        },
-                      })
-                    }
+                    onClick={() => {
+                      const updates: any = {
+                        status: "confirmed",
+                        technician: selectedTechnician || selectedBooking?.technician,
+                      };
+                      if (selectedLogisticsPartnerId) {
+                        updates.logistics_partner_id = selectedLogisticsPartnerId;
+                      }
+                      updateBookingMutation.mutate({ id: selectedBooking?.id, updates });
+                    }}
                     disabled={updateBookingMutation.isPending || selectedBooking?.status !== 'pending'}
                     className="h-11 rounded-xl bg-blue-600 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md shadow-blue-200 hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-60"
                   >

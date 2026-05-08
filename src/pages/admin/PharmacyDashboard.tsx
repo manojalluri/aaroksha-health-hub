@@ -99,6 +99,7 @@ const PharmacyDashboard = () => {
   const [selectedOrder, setSelectedOrder] = useState<PrescriptionOrder | null>(null);
   const [deliveryCodeInput, setDeliveryCodeInput] = useState("");
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
+  const [selectedLogisticsPartnerId, setSelectedLogisticsPartnerId] = useState("");
 
   const [settlementFilter, setSettlementFilter] = useState<"all" | "today" | "yesterday">("all");
   const [editMedicines, setEditMedicines] = useState<MedicineItem[]>([]);
@@ -109,7 +110,7 @@ const PharmacyDashboard = () => {
   const [revenueFilter, setRevenueFilter] = useState<"today" | "7days" | "30days" | "custom">("30days");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
-  
+
   // ─── Fetch Platform Settings ─────────────────────────────────────────────
   const { data: settings } = useQuery({
     queryKey: ["platform-settings"],
@@ -117,6 +118,21 @@ const PharmacyDashboard = () => {
       const { data } = await supabase.from("platform_settings").select("*").eq("id", "global").single();
       return data;
     }
+  });
+
+  // ─── Fetch Logistics Partners (pharmacy category) ────────────────────────
+  const { data: logisticsPartners = [] } = useQuery<any[]>({
+    queryKey: ["pharmacy-logistics-partners"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("partners")
+        .select("*")
+        .eq("type", "logistics")
+        .in("category", ["pharmacy", "both"])
+        .eq("status", "active");
+      if (error) throw error;
+      return data || [];
+    },
   });
 
   // ─── Fetch prescriptions from Supabase ───────────────────────────────────
@@ -217,6 +233,8 @@ const PharmacyDashboard = () => {
     setPlatformFee(Number(settings?.pharm_fee || 19));
     
     setDeliveryCodeInput("");
+    // Pre-fill logistics partner if already assigned
+    setSelectedLogisticsPartnerId(order.logistics_partner_id || "");
     setReviewDialogOpen(true);
   };
 
@@ -246,8 +264,12 @@ const PharmacyDashboard = () => {
   };
 
   const handleDispatch = (id: string) => {
-    updateMutation.mutate({ id, updates: { status: "dispatched" } });
-    toast.success(`Order dispatched`);
+    const updates: any = { status: "dispatched" };
+    if (selectedLogisticsPartnerId) {
+      updates.logistics_partner_id = selectedLogisticsPartnerId;
+    }
+    updateMutation.mutate({ id, updates });
+    toast.success(`Order dispatched${selectedLogisticsPartnerId ? ' & assigned to logistics partner' : ''}`);
   };
 
   const handleMarkDelivered = (id: string, correctCode?: string) => {
@@ -808,9 +830,35 @@ const PharmacyDashboard = () => {
                   </div>
                 )}
                 {selectedOrder.status === "reviewed" && selectedOrder.payment_status === "paid" && (
-                  <Button className="w-full bg-orange-500 hover:bg-orange-600" onClick={() => handleDispatch(selectedOrder.id)} disabled={updateMutation.isPending}>
-                    <Truck className="h-4 w-4 mr-2" /> Mark as Dispatched
-                  </Button>
+                  <div className="space-y-2">
+                    {/* Logistics Partner Assignment */}
+                    <div className="p-3 rounded-xl bg-orange-50 border border-orange-100">
+                      <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-2">
+                        Assign Logistics Partner (optional)
+                      </p>
+                      <select
+                        value={selectedLogisticsPartnerId}
+                        onChange={(e) => setSelectedLogisticsPartnerId(e.target.value)}
+                        className="w-full h-10 bg-white border border-orange-200 rounded-xl px-3 text-xs font-bold text-slate-700 outline-none appearance-none cursor-pointer focus:border-orange-400 transition-all"
+                      >
+                        <option value="">-- No logistics partner --</option>
+                        {logisticsPartners.map((lp: any) => (
+                          <option key={lp.id} value={lp.partner_id}>{lp.name}</option>
+                        ))}
+                      </select>
+                      {logisticsPartners.length === 0 && (
+                        <p className="text-[9px] text-slate-400 mt-1">No active pharmacy logistics partners found.</p>
+                      )}
+                    </div>
+                    <Button
+                      className="w-full bg-orange-500 hover:bg-orange-600"
+                      onClick={() => handleDispatch(selectedOrder.id)}
+                      disabled={updateMutation.isPending}
+                    >
+                      <Truck className="h-4 w-4 mr-2" />
+                      {selectedLogisticsPartnerId ? "Dispatch & Assign Logistics" : "Mark as Dispatched"}
+                    </Button>
+                  </div>
                 )}
                 {selectedOrder.status === "dispatched" && (
                   <Button className="w-full bg-emerald-600 hover:bg-emerald-700 font-bold" onClick={() => handleMarkDelivered(selectedOrder.id, selectedOrder.delivery_code)} disabled={updateMutation.isPending}>

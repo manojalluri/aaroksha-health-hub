@@ -169,3 +169,8 @@ export const getPartnerIdFromSession = async (): Promise<string | null> => {
     return null;
   }
 };
+// ─── Check if any admin is already logged in (for login pages) ─────
+export const checkIsLoggedIn = async (role: AdminRole): Promise<boolean> => {
+  if (role === "super") return await verifySuperAdminSession();
+  return await verifyPartnerSession(role);
+};

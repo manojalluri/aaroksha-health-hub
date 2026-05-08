@@ -106,10 +106,18 @@ const Index = () => {
       })
       .subscribe();
 
+    // Supabase Realtime for Banners
+    const bannerChannel = supabase.channel("public:platform_banners")
+      .on("postgres_changes", { event: "*", schema: "public", table: "platform_banners" }, () => {
+        syncBannersFromSupabase().then(b => setBanners(b));
+      })
+      .subscribe();
+
     return () => {
       window.removeEventListener("doctors_updated", handleUpdate);
       window.removeEventListener("storage", handleStorage);
       supabase.removeChannel(channel);
+      supabase.removeChannel(bannerChannel);
     };
   }, []);
 

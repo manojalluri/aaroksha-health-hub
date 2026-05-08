@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
   Lock, Mail, ChevronRight, Stethoscope, Loader2, Eye, EyeOff, ArrowLeft
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { createPartnerSession } from "@/lib/adminAuth";
+import { createPartnerSession, checkIsLoggedIn } from "@/lib/adminAuth";
 
 const HospitalLogin = () => {
   const navigate = useNavigate();
@@ -13,6 +13,10 @@ const HospitalLogin = () => {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPass, setShowPass] = useState(false);
+
+  useEffect(() => {
+    checkIsLoggedIn("hospital").then(ok => ok && navigate("/admin/hospital"));
+  }, [navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,13 +26,14 @@ const HospitalLogin = () => {
       const { data: partner, error } = await supabase
         .from("partners")
         .select("id, partner_id, name, type")
-        .eq("email", email)
+        .eq("email", email.toLowerCase())
         .eq("password", password)
         .eq("type", "hospital")
+        .eq("status", "active")
         .single();
 
       if (error || !partner) {
-        throw new Error("Invalid credentials or unauthorized portal.");
+        throw new Error("Invalid credentials or account inactive.");
       }
 
       // Step 2: Create a secure, DB-backed session token (sessionStorage only)
