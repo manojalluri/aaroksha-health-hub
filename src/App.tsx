@@ -11,6 +11,10 @@ import LabTestsPage from "./pages/LabTestsPage";
 import PrescriptionPage from "./pages/PrescriptionPage";
 import ProfilePage from "./pages/ProfilePage";
 import AuthPage from "./pages/AuthPage";
+import TermsPage from "./pages/TermsPage";
+import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
+import RefundPolicyPage from "./pages/RefundPolicyPage";
+import ReturnPolicyPage from "./pages/ReturnPolicyPage";
 import { AuthProvider } from "./contexts/AuthContext";
 import HospitalDashboard from "./pages/admin/HospitalDashboard";
 import LabDashboard from "./pages/admin/LabDashboard";
@@ -91,6 +95,10 @@ const AppRoutes = () => {
           <Route path="/prescription" element={<PrescriptionPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/auth" element={<AuthPage />} />
+          <Route path="/terms-and-conditions" element={<TermsPage />} />
+          <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+          <Route path="/refund-policy" element={<RefundPolicyPage />} />
+          <Route path="/return-policy" element={<ReturnPolicyPage />} />
         </>
       )}
 

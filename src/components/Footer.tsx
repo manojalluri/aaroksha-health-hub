@@ -25,13 +25,12 @@ const Footer = () => {
             </ul>
           </div>
           <div>
-            <h3 className="text-base font-bold text-foreground mb-4">Company</h3>
+            <h3 className="text-base font-bold text-foreground mb-4">Legal & Policies</h3>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              {["About Us", "Careers", "Press", "FAQ", "Privacy Policy"].map((item) => (
-                <li key={item}>
-                  <a href="#" className="hover:text-primary transition-colors">{item}</a>
-                </li>
-              ))}
+              <li><Link to="/terms-and-conditions" className="hover:text-primary transition-colors">Terms & Conditions</Link></li>
+              <li><Link to="/privacy-policy" className="hover:text-primary transition-colors">Privacy Policy</Link></li>
+              <li><Link to="/refund-policy" className="hover:text-primary transition-colors">Refund Policy</Link></li>
+              <li><Link to="/return-policy" className="hover:text-primary transition-colors">Return Policy</Link></li>
             </ul>
           </div>
           <div>
