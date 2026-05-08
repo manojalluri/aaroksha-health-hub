@@ -230,7 +230,7 @@ const Index = () => {
                   letterSpacing: "-0.03em",
                 }}
               >
-                AAROKSHA
+                {settings.platform_name || "AAROKSHA"}
               </h1>
               <p className="text-[10px] text-slate-400 font-semibold flex items-center gap-1 mt-0.5">
                 <MapPin className="h-2.5 w-2.5 text-blue-500" /> Bhimavaram, India

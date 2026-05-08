@@ -261,11 +261,18 @@ const SuperAdminDashboard = () => {
     const { data: currentDb } = await supabase.from("platform_banners").select("id");
     const currentIds = (currentDb || []).map(row => row.id);
     
-    // 2. Map new banners to their DB format IDs
-    const newMapped = updated.map((b, idx) => ({
-      ...b,
-      dbId: b.id.startsWith("default") ? `00000000-0000-0000-0000-00000000000${idx}` : b.id
-    }));
+    // 2. Map new banners to their DB format IDs (Must be valid UUIDs)
+    const newMapped = updated.map((b, idx) => {
+      let dbId = b.id;
+      if (b.id.startsWith("default")) {
+        dbId = `00000000-0000-0000-0000-00000000000${b.id.slice(-1)}`;
+      } else if (b.id.startsWith("custom-")) {
+        // Fallback for existing custom IDs that are not UUIDs
+        const hex = b.id.replace("custom-", "").padEnd(12, '0').slice(0, 12);
+        dbId = `c0000000-0000-0000-0000-${hex}`;
+      }
+      return { ...b, dbId };
+    });
     const newIds = newMapped.map(b => b.dbId);
     
     // 3. Find IDs to delete
@@ -295,8 +302,16 @@ const SuperAdminDashboard = () => {
   };
 
   const handleAddBanner = () => {
+    // Generate a proper UUID if possible, otherwise fallback to our custom-hex format
+    let newId = "";
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      newId = crypto.randomUUID();
+    } else {
+      newId = `custom-${Date.now()}`;
+    }
+
     const newBanner: Banner = {
-      id: `custom-${Date.now()}`,
+      id: newId,
       title: "New Banner\nHeadline",
       subtitle: "Add a short description here",
       cta: "Learn More",

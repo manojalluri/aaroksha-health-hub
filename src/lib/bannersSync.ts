@@ -63,19 +63,39 @@ export const saveBanners = (banners: Banner[]) => {
 export const saveBannersToSupabase = async (banners: Banner[]) => {
   const { error } = await supabase
     .from("platform_banners")
-    .upsert(banners.map(b => ({
-      id: b.id.includes("default") ? "00000000-0000-0000-0000-00000000000" + b.id.slice(-1) : b.id,
-      title: b.title,
-      subtitle: b.subtitle,
-      image_url: b.image,
-      link_to: b.to,
-      cta_text: b.cta,
-      gradient: b.gradient,
-      cta_color: b.ctaColor,
-      emoji: b.emoji,
-      badge_text: b.badge,
-      is_active: true
-    })));
+    .upsert(banners.map((b, idx) => {
+      let validUuid = b.id;
+      
+      // If it's a default banner, use a fixed UUID format
+      if (b.id.includes("default")) {
+        validUuid = `00000000-0000-0000-0000-00000000000${b.id.slice(-1)}`;
+      } 
+      // If it's a "custom-" ID (old format), we need to replace it with a valid UUID for the DB
+      else if (b.id.includes("custom")) {
+        // If crypto.randomUUID is available, use it, otherwise use the timestamp-based ID as is (which will fail)
+        // But better yet, we should have generated a UUID at creation time.
+        // For existing ones, we'll try to keep them unique.
+        validUuid = b.id.replace("custom-", "c0000000-0000-0000-0000-");
+        // Ensure it's exactly 36 chars if possible, but the DB will still complain if it's not a real UUID.
+        // Let's use a more robust fallback:
+        const hex = b.id.replace("custom-", "").padEnd(12, '0').slice(0, 12);
+        validUuid = `c0000000-0000-0000-0000-${hex}`;
+      }
+
+      return {
+        id: validUuid,
+        title: b.title,
+        subtitle: b.subtitle,
+        image_url: b.image,
+        link_to: b.to,
+        cta_text: b.cta,
+        gradient: b.gradient,
+        cta_color: b.ctaColor,
+        emoji: b.emoji,
+        badge_text: b.badge,
+        is_active: true
+      };
+    }));
   
   if (!error) saveBanners(banners);
   return { error };

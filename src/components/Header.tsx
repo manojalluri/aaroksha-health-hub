@@ -1,8 +1,17 @@
 import { Link, useLocation } from "react-router-dom";
 import { MapPin, Menu, X } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { getSettings } from "@/lib/settingsSync";
 
 const Header = () => {
+  const [settings, setSettings] = useState(getSettings());
+
+  useEffect(() => {
+    const handleUpdate = () => setSettings(getSettings());
+    window.addEventListener("settings_updated", handleUpdate);
+    return () => window.removeEventListener("settings_updated", handleUpdate);
+  }, []);
+
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
 

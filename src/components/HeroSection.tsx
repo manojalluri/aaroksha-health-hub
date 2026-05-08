@@ -1,6 +1,8 @@
 import { Stethoscope, FlaskConical, Pill, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
 import heroImage from "@/assets/hero-medical.jpg";
+import { getSettings } from "@/lib/settingsSync";
 
 const ServiceCard = ({
   icon: Icon,
@@ -29,6 +31,14 @@ const ServiceCard = ({
 );
 
 const HeroSection = () => {
+  const [settings, setSettings] = useState(getSettings());
+
+  useEffect(() => {
+    const handleUpdate = () => setSettings(getSettings());
+    window.addEventListener("settings_updated", handleUpdate);
+    return () => window.removeEventListener("settings_updated", handleUpdate);
+  }, []);
+
   return (
     <div className="relative overflow-hidden">
       {/* Hero gradient background */}
@@ -49,7 +59,7 @@ const HeroSection = () => {
         <div className="relative z-10 mt-8 w-full max-w-4xl">
           <img
             src={heroImage}
-            alt="Aaroksha Healthcare Platform"
+            alt={`${settings.platform_name} Healthcare Platform`}
             className="w-full h-auto rounded-t-2xl"
             width={1920}
             height={800}
