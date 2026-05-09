@@ -30,8 +30,21 @@ interface LabTest {
   name: string;
   category: string;
   price: number;
+  original_price?: number;
   turnaround: string;
   description?: string;
+}
+
+interface LabCombo {
+  id?: string;
+  name: string;
+  description: string;
+  tests: string[];
+  test_ids?: string[];
+  original_price: number;
+  combo_price: number;
+  tag?: string;
+  color: string;
 }
 
 interface LabTestItem {
@@ -46,8 +59,8 @@ interface LabBooking {
   patient_name: string;
   patient_phone: string;
   patient_address: string;
-  age: number;
-  gender: string;
+  patient_age: number;
+  patient_gender: string;
   collection_date: string;
   collection_time: string;
   technician?: string | null;
@@ -84,7 +97,7 @@ interface LabTechnician {
 const MOCK_BOOKINGS = [
   {
     id: "lb001", patient_name: "Rahul Verma", patient_phone: "9876543210",
-    patient_address: "12, MG Road, Bhimavaram", age: 32, gender: "Male",
+    patient_address: "12, MG Road, Bhimavaram", patient_age: 32, patient_gender: "Male",
     collection_date: "2026-03-29", collection_time: "09:00 AM",
     technician: null, total_amount: 1000, status: "pending",
     tests: [
@@ -94,14 +107,14 @@ const MOCK_BOOKINGS = [
   },
   {
     id: "lb002", patient_name: "Sneha Patil", patient_phone: "9123456780",
-    patient_address: "45, Jubilee Hills, Bhimavaram", age: 28, gender: "Female",
+    patient_address: "45, Jubilee Hills, Bhimavaram", patient_age: 28, patient_gender: "Female",
     collection_date: "2026-03-29", collection_time: "08:00 AM",
     technician: "Technician Ravi", total_amount: 2500, status: "confirmed",
     tests: [{ name: "Comprehensive Metabolic Panel", price: 2500 }]
   },
   {
     id: "lb003", patient_name: "Amit Sharma", patient_phone: "9988776655",
-    patient_address: "8, Banjara Hills, Bhimavaram", age: 45, gender: "Male",
+    patient_address: "8, Banjara Hills, Bhimavaram", patient_age: 45, patient_gender: "Male",
     collection_date: "2026-03-28", collection_time: "07:00 AM",
     technician: "Technician Priya", total_amount: 1100, status: "collected",
     tests: [
@@ -112,21 +125,21 @@ const MOCK_BOOKINGS = [
   },
   {
     id: "lb004", patient_name: "Priya Reddy", patient_phone: "9876001234",
-    patient_address: "23, Madhapur, Bhimavaram", age: 35, gender: "Female",
+    patient_address: "23, Madhapur, Bhimavaram", patient_age: 35, patient_gender: "Female",
     collection_date: "2026-03-28", collection_time: "10:00 AM",
     technician: "Technician Ravi", total_amount: 800, status: "processing",
     tests: [{ name: "Vitamin D Test", price: 800 }]
   },
   {
     id: "lb005", patient_name: "Kiran Kumar", patient_phone: "9000112233",
-    patient_address: "56, Gachibowli, Bhimavaram", age: 52, gender: "Male",
+    patient_address: "56, Gachibowli, Bhimavaram", patient_age: 52, patient_gender: "Male",
     collection_date: "2026-03-27", collection_time: "06:30 AM",
     technician: "Technician Anil", total_amount: 450, status: "cancelled",
     tests: [{ name: "Urine Routine", price: 150 }, { name: "Kidney Function Test", price: 300 }]
   },
   {
     id: "lb006", patient_name: "Deepa Nair", patient_phone: "9870001122",
-    patient_address: "11, Kondapur, Bhimavaram", age: 38, gender: "Female",
+    patient_address: "11, Kondapur, Bhimavaram", patient_age: 38, patient_gender: "Female",
     collection_date: "2026-03-27", collection_time: "08:30 AM",
     technician: "Technician Priya", total_amount: 600, status: "completed",
     tests: [{ name: "Urine Routine", price: 150 }, { name: "Blood Sugar PP", price: 450 }]
@@ -235,7 +248,7 @@ const LabDashboard = () => {
   const [partner, setPartner] = useState<any>(null);
 
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"bookings" | "results" | "manage" | "technicians" | "scheduling" | "analytics" | "settlements">("bookings");
+  const [activeTab, setActiveTab] = useState<"bookings" | "results" | "manage" | "combos" | "technicians" | "scheduling" | "analytics" | "settlements">("bookings");
   const [search, setSearch] = useState("");
 
   // ── Analytics State ──────────────────────────────────────────────────────
@@ -250,6 +263,8 @@ const LabDashboard = () => {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isEditTestOpen, setIsEditTestOpen] = useState(false);
   const [editingTest, setEditingTest] = useState<LabTest | null>(null);
+  const [isEditComboOpen, setIsEditComboOpen] = useState(false);
+  const [editingCombo, setEditingCombo] = useState<LabCombo | null>(null);
   const [selectedTechnician, setSelectedTechnician] = useState("");
   const [selectedLogisticsPartnerId, setSelectedLogisticsPartnerId] = useState("");
   const [collectionCodeInput, setCollectionCodeInput] = useState("");
@@ -469,6 +484,21 @@ const LabDashboard = () => {
     retry: false,
   });
   const testsList = (Array.isArray(testsList_raw) ? testsList_raw : []) as LabTest[];
+
+  // ── Fetch combos ────────────────────────────────────────────────────────────
+  const { data: combosList_raw, isLoading: isCombosLoading } = useQuery<LabCombo[]>({
+    queryKey: ["admin-combos"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("lab_combos")
+        .select("*")
+        .order("name", { ascending: true });
+      if (error) throw error;
+      return (data || []) as LabCombo[];
+    },
+    retry: false,
+  });
+  const combosList = (Array.isArray(combosList_raw) ? combosList_raw : []) as LabCombo[];
   
   // ── Fetch logistics partners ────────────────────────────────────────────────
   const { data: logisticsPartners = [] } = useQuery<any[]>({
@@ -551,6 +581,45 @@ const LabDashboard = () => {
     }
   });
 
+  const saveComboMutation = useMutation({
+    mutationFn: async (combo: LabCombo) => {
+      const { id, ...data } = combo;
+      if (!id) {
+        const { error } = await supabase.from("lab_combos").insert(data);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("lab_combos").update(data).eq("id", id);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-combos"] });
+      queryClient.invalidateQueries({ queryKey: ["lab-combos"] });
+      toast.success("Combo saved successfully");
+      setIsEditComboOpen(false);
+    },
+    onError: (err) => {
+      console.error(err);
+      toast.error("Failed to save combo");
+    },
+  });
+
+  const deleteComboMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("lab_combos").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-combos"] });
+      queryClient.invalidateQueries({ queryKey: ["lab-combos"] });
+      toast.success("Combo deleted successfully");
+    },
+    onError: (err) => {
+      console.error("Delete Combo Error:", err);
+      toast.error("Failed to delete combo");
+    }
+  });
+
   // ── Stats ───────────────────────────────────────────────────────────────────
   const stats = [
     {
@@ -624,6 +693,10 @@ const LabDashboard = () => {
 
   const filteredTests = testsList.filter((t) =>
     t.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const filteredCombos = combosList.filter((c) =>
+    c.name.toLowerCase().includes(search.toLowerCase())
   );
 
   const formatDate = (dateStr: string, timeStr?: string) => {
@@ -715,7 +788,7 @@ const LabDashboard = () => {
         <div className="bg-white rounded-2xl border border-white shadow-sm overflow-hidden">
           {/* Tabs */}
           <div className="flex items-center border-b border-slate-100 px-2 pt-2 flex-wrap gap-0.5">
-            {(["bookings", "results", "manage", "technicians", "scheduling", "analytics", "settlements"] as const).map((tab) => (
+            {(["bookings", "results", "manage", "combos", "technicians", "scheduling", "analytics", "settlements"] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => { setActiveTab(tab as any); setSearch(""); setStatusFilter("All"); }}
@@ -728,6 +801,7 @@ const LabDashboard = () => {
                 {tab === "bookings" ? "Bookings"
                   : tab === "results" ? "Results Entry"
                   : tab === "manage" ? "Manage Tests"
+                  : tab === "combos" ? "Combo Packs"
                   : tab === "technicians" ? "Technicians"
                   : tab === "scheduling" ? "Scheduling"
                   : tab === "settlements" ? "Settlements & Payouts"
@@ -815,7 +889,7 @@ const LabDashboard = () => {
                               {b.patient_name}
                             </p>
                             <p className="text-[11px] text-slate-400 font-medium">
-                              {b.age}y / {b.gender}
+                              {b.patient_age}y / {b.patient_gender}
                             </p>
                           </td>
                           <td className="py-4 text-sm text-slate-500 font-medium">
@@ -993,9 +1067,10 @@ const LabDashboard = () => {
                       name: "",
                       description: "",
                       price: 0,
+                      original_price: 0,
                       category: "Blood",
                       turnaround: "6 hours",
-                    });
+                    } as any);
                     setIsEditTestOpen(true);
                   }}
                   className="h-10 px-5 rounded-xl bg-blue-600 text-white text-sm font-bold flex items-center gap-2 shadow-md shadow-blue-200 hover:bg-blue-700 transition-all"
@@ -1008,7 +1083,7 @@ const LabDashboard = () => {
                 <table className="w-full">
                   <thead>
                     <tr className="text-left border-y border-slate-100 bg-slate-50/50">
-                      {["Test Name", "Category", "Price", "Turnaround", "Description", "Actions"].map(
+                      {["Test Name", "Category", "Original Price", "Offer Price", "Turnaround", "Description", "Actions"].map(
                         (h) => (
                           <th
                             key={h}
@@ -1025,13 +1100,13 @@ const LabDashboard = () => {
                   <tbody className="divide-y divide-slate-50">
                     {isTestsLoading ? (
                       <tr>
-                        <td colSpan={6} className="py-20 text-center">
+                        <td colSpan={7} className="py-20 text-center">
                           <Loader2 className="h-7 w-7 animate-spin mx-auto text-blue-500" />
                         </td>
                       </tr>
                     ) : filteredTests.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-16 text-center text-slate-400 text-sm font-medium">
+                        <td colSpan={7} className="py-16 text-center text-slate-400 text-sm font-medium">
                           No tests found
                         </td>
                       </tr>
@@ -1049,7 +1124,10 @@ const LabDashboard = () => {
                               {test.category}
                             </Badge>
                           </td>
-                          <td className="py-4 text-sm font-bold text-slate-800">
+                          <td className="py-4 text-sm text-slate-400 font-medium line-through">
+                            {test.original_price ? `₹${test.original_price}` : "-"}
+                          </td>
+                          <td className="py-4 text-sm font-bold text-blue-600">
                             ₹{test.price}
                           </td>
                           <td className="py-4 text-sm text-slate-500 font-medium">
@@ -1094,6 +1172,135 @@ const LabDashboard = () => {
               </div>
             </>
           )}
+
+          {/* ── Combos Tab ──────────────────────────────────────────── */}
+          {activeTab === "combos" && (
+            <>
+              <div className="px-6 py-4 flex items-center gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <input
+                    placeholder="Search combos..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 text-sm focus:outline-none focus:border-blue-400 focus:bg-white transition-all"
+                  />
+                </div>
+                <button
+                  onClick={() => {
+                    setEditingCombo({
+                      name: "",
+                      description: "",
+                      tests: [],
+                      original_price: 0,
+                      combo_price: 0,
+                      color: "#3b82f6",
+                    });
+                    setIsEditComboOpen(true);
+                  }}
+                  className="h-10 px-5 rounded-xl bg-purple-600 text-white text-sm font-bold flex items-center gap-2 shadow-md shadow-purple-200 hover:bg-purple-700 transition-all"
+                >
+                  <Plus className="h-4 w-4" /> Add Combo
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="text-left border-y border-slate-100 bg-slate-50/50">
+                      {["Combo Name", "Tests Included", "Original Price", "Combo Price", "Tag", "Actions"].map(
+                        (h) => (
+                          <th
+                            key={h}
+                            className={`py-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider ${
+                              h === "Combo Name" ? "pl-6" : h === "Actions" ? "pr-6 text-right" : ""
+                            }`}
+                          >
+                            {h}
+                          </th>
+                        )
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {isCombosLoading ? (
+                      <tr>
+                        <td colSpan={6} className="py-20 text-center">
+                          <Loader2 className="h-7 w-7 animate-spin mx-auto text-purple-500" />
+                        </td>
+                      </tr>
+                    ) : filteredCombos.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="py-16 text-center text-slate-400 text-sm font-medium">
+                          No combos found
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredCombos.map((combo) => (
+                        <tr key={combo.id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="pl-6 py-4">
+                            <p className="text-sm font-bold text-slate-800 leading-none mb-1">{combo.name}</p>
+                            <p className="text-[10px] text-slate-400 font-medium max-w-[200px] truncate">{combo.description}</p>
+                          </td>
+                          <td className="py-4">
+                            <div className="flex flex-wrap gap-1 max-w-[200px]">
+                              {combo.tests.map(t => (
+                                <Badge key={t} variant="secondary" className="bg-slate-100 text-slate-600 rounded-md text-[9px] border-0 truncate max-w-full">
+                                  {t}
+                                </Badge>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="py-4 text-sm text-slate-400 font-medium line-through">
+                            ₹{combo.original_price}
+                          </td>
+                          <td className="py-4 text-sm font-black text-purple-600">
+                            ₹{combo.combo_price}
+                          </td>
+                          <td className="py-4">
+                            {combo.tag ? (
+                              <Badge style={{ backgroundColor: combo.color }} className="text-white text-[10px] uppercase tracking-wider font-bold border-0">
+                                {combo.tag}
+                              </Badge>
+                            ) : <span className="text-slate-300">-</span>}
+                          </td>
+                          <td className="py-4 pr-6 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                onClick={() => {
+                                  setEditingCombo(combo);
+                                  setIsEditComboOpen(true);
+                                }}
+                                className="h-8 w-8 rounded-lg hover:bg-purple-50 hover:text-purple-600 flex items-center justify-center text-slate-400 transition-all"
+                              >
+                                <Edit className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Permanently delete combo "${combo.name}"?`)) {
+                                    deleteComboMutation.mutate(combo.id!);
+                                  }
+                                }}
+                                disabled={deleteComboMutation.isPending}
+                                className="h-8 w-8 rounded-lg hover:bg-red-50 hover:text-red-500 flex items-center justify-center text-slate-400 transition-all disabled:opacity-50"
+                              >
+                                {deleteComboMutation.isPending && deleteComboMutation.variables === combo.id ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
           {/* ── Technicians Tab ───────────────────────────────────────────── */}
           {activeTab === "technicians" && (
             <div className="p-6">
@@ -1656,7 +1863,7 @@ const LabDashboard = () => {
                       {selectedBooking?.patient_name}
                     </p>
                     <p className="text-xs text-slate-500 font-medium mt-0.5">
-                      {selectedBooking?.age}y, {selectedBooking?.gender}
+                      {selectedBooking?.patient_age}y, {selectedBooking?.patient_gender}
                     </p>
                   </div>
                   <div className="text-right">
@@ -2072,21 +2279,35 @@ const LabDashboard = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-slate-700">Price (₹)</Label>
+                  <Label className="text-xs font-bold text-slate-700">Original Price (₹)</Label>
                   <Input
                     type="number"
-                    value={editingTest?.price ?? ""}
+                    value={editingTest?.original_price ?? ""}
                     onChange={(e) =>
-                      setEditingTest({ ...editingTest, price: parseInt(e.target.value) || 0 })
+                      setEditingTest({ ...editingTest!, original_price: parseInt(e.target.value) || 0 })
                     }
                     className="h-11 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:border-blue-400"
                   />
                 </div>
                 <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-700">Offer Price (₹)</Label>
+                  <Input
+                    type="number"
+                    value={editingTest?.price ?? ""}
+                    onChange={(e) =>
+                      setEditingTest({ ...editingTest!, price: parseInt(e.target.value) || 0 })
+                    }
+                    className="h-11 bg-blue-50 border border-blue-200 rounded-xl font-bold text-blue-700 focus:border-blue-400"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
                   <Label className="text-xs font-bold text-slate-700">Category</Label>
                   <select
                     value={editingTest?.category ?? "Blood"}
-                    onChange={(e) => setEditingTest({ ...editingTest, category: e.target.value })}
+                    onChange={(e) => setEditingTest({ ...editingTest!, category: e.target.value })}
                     className="w-full h-11 bg-blue-50 border-2 border-blue-500 rounded-xl px-3 text-sm font-medium text-blue-700 outline-none focus:ring-2 focus:ring-blue-200 transition-all cursor-pointer"
                   >
                     {["Blood", "Hormone", "Diabetes", "Urine", "Vitamin", "Cardiac", "Liver", "Kidney"].map(
@@ -2094,16 +2315,15 @@ const LabDashboard = () => {
                     )}
                   </select>
                 </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-slate-700">Turnaround Time</Label>
-                <Input
-                  value={editingTest?.turnaround ?? ""}
-                  onChange={(e) => setEditingTest({ ...editingTest, turnaround: e.target.value })}
-                  className="h-11 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:border-blue-400"
-                  placeholder="e.g. 6 hours"
-                />
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-700">Turnaround Time</Label>
+                  <Input
+                    value={editingTest?.turnaround ?? ""}
+                    onChange={(e) => setEditingTest({ ...editingTest!, turnaround: e.target.value })}
+                    className="h-11 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:border-blue-400"
+                    placeholder="e.g. 6 hours"
+                  />
+                </div>
               </div>
 
               <button
@@ -2118,6 +2338,145 @@ const LabDashboard = () => {
                 )}
               </button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Edit / Add Combo Modal ──────────────────────────────────────────── */}
+      <Dialog open={isEditComboOpen} onOpenChange={setIsEditComboOpen}>
+        <DialogContent className="max-w-md p-0 rounded-2xl overflow-hidden border-0 shadow-2xl">
+          <div className="bg-white px-6 py-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <DialogTitle className="text-xl font-extrabold text-slate-900">
+                {editingCombo?.id ? "Edit Combo" : "Add Combo"}
+              </DialogTitle>
+              <button
+                onClick={() => setIsEditComboOpen(false)}
+                className="h-8 w-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 transition-all"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-700">Combo Name</Label>
+                <Input
+                  value={editingCombo?.name ?? ""}
+                  onChange={(e) => setEditingCombo({ ...editingCombo!, name: e.target.value })}
+                  className="h-11 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:border-purple-400"
+                  placeholder="e.g. Full Body Wellness"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-700">Description</Label>
+                <Input
+                  value={editingCombo?.description ?? ""}
+                  onChange={(e) => setEditingCombo({ ...editingCombo!, description: e.target.value })}
+                  className="h-11 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:border-purple-400"
+                  placeholder="Brief description"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-700">Original Price (₹)</Label>
+                  <Input
+                    type="number"
+                    value={editingCombo?.original_price ?? ""}
+                    onChange={(e) =>
+                      setEditingCombo({ ...editingCombo!, original_price: parseInt(e.target.value) || 0 })
+                    }
+                    className="h-11 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:border-purple-400"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-700">Combo Price (₹)</Label>
+                  <Input
+                    type="number"
+                    value={editingCombo?.combo_price ?? ""}
+                    onChange={(e) =>
+                      setEditingCombo({ ...editingCombo!, combo_price: parseInt(e.target.value) || 0 })
+                    }
+                    className="h-11 bg-purple-50 border border-purple-200 rounded-xl font-bold text-purple-700 focus:border-purple-400"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-700">Tag (e.g. Popular)</Label>
+                  <Input
+                    value={editingCombo?.tag ?? ""}
+                    onChange={(e) => setEditingCombo({ ...editingCombo!, tag: e.target.value })}
+                    className="h-11 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:border-purple-400"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-700">Theme Color</Label>
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="color"
+                      value={editingCombo?.color ?? "#3b82f6"}
+                      onChange={(e) => setEditingCombo({ ...editingCombo!, color: e.target.value })}
+                      className="h-11 w-11 rounded-lg cursor-pointer border-0 bg-transparent p-0"
+                    />
+                    <Input
+                      value={editingCombo?.color ?? "#3b82f6"}
+                      onChange={(e) => setEditingCombo({ ...editingCombo!, color: e.target.value })}
+                      className="h-11 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs uppercase"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-700 mb-2 block">Tests Included</Label>
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl max-h-48 overflow-y-auto space-y-2">
+                  {testsList.map(test => {
+                    const isSelected = editingCombo?.tests?.includes(test.name);
+                    return (
+                      <label key={test.id} className="flex items-start gap-2 cursor-pointer p-1.5 hover:bg-white rounded-lg transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            const tests = [...(editingCombo?.tests || [])];
+                            if (e.target.checked) tests.push(test.name);
+                            else {
+                              const idx = tests.indexOf(test.name);
+                              if (idx > -1) tests.splice(idx, 1);
+                            }
+                            setEditingCombo({ ...editingCombo!, tests });
+                          }}
+                          className="mt-0.5 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                        />
+                        <div className="flex-1">
+                          <p className="text-xs font-bold text-slate-700 leading-tight">{test.name}</p>
+                          <p className="text-[10px] text-slate-400">₹{test.price}</p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                  {testsList.length === 0 && (
+                    <p className="text-xs text-slate-400 text-center py-2">No individual tests available</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => saveComboMutation.mutate(editingCombo!)}
+              disabled={saveComboMutation.isPending || !editingCombo?.name}
+              className="w-full h-12 bg-purple-600 text-white rounded-xl font-bold shadow-md shadow-purple-200 hover:bg-purple-700 transition-all active:scale-95 disabled:opacity-60 mt-2"
+            >
+              {saveComboMutation.isPending ? (
+                <Loader2 className="h-5 w-5 animate-spin mx-auto" />
+              ) : (
+                "Save Combo"
+              )}
+            </button>
           </div>
         </DialogContent>
       </Dialog>

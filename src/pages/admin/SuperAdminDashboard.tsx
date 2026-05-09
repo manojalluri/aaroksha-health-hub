@@ -688,6 +688,18 @@ const SuperAdminDashboard = () => {
     { id: "settings" as Tab,      label: "Settings",       icon: <Settings className="h-4 w-4" /> },
   ];
 
+  if (isVerifying) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#F4F6FA]">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return null;
+  }
+
   return (
     <div className="flex h-screen overflow-hidden bg-[#F4F6FA]">
 
@@ -744,7 +756,10 @@ const SuperAdminDashboard = () => {
               <p className="text-white text-xs font-bold truncate">Super Admin</p>
               <p className="text-slate-500 text-[10px] truncate">super@aaroksha.com</p>
             </div>
-            <button onClick={() => supabase.auth.signOut()} className="text-slate-500 hover:text-red-400 transition-colors">
+            <button onClick={async () => {
+              await supabase.auth.signOut();
+              navigate("/admin/login/super");
+            }} className="text-slate-500 hover:text-red-400 transition-colors">
               <LogOut className="h-4 w-4" />
             </button>
           </div>

@@ -17,6 +17,7 @@ interface LabTest {
   name: string;
   category: string;
   price: number;
+  original_price?: number;
   description: string;
   turnaround: string;
 }
@@ -400,6 +401,40 @@ const LabTestsPage = () => {
             ))}
           </div>
 
+          {/* Cart Panel (Global for browse step) */}
+          {showCart && cart.length > 0 && (
+            <div className="bg-white rounded-2xl border border-purple-100 shadow-lg overflow-hidden mx-4 mb-4">
+              <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+                <p className="font-black text-slate-800 text-sm">Cart ({cart.length} items)</p>
+                <p className="font-black text-purple-600">&#8377;{total}</p>
+              </div>
+              <div className="divide-y divide-slate-50 max-h-64 overflow-y-auto">
+                {cart.map((item) => (
+                  <div key={item.test.id} className="flex items-center justify-between px-4 py-3">
+                    <div>
+                      <p className="text-sm font-bold text-slate-700 truncate">{item.test.name}</p>
+                      <p className="text-[10px] font-medium text-slate-400">{item.test.turnaround}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <p className="font-black text-slate-800 text-sm">&#8377;{item.test.price}</p>
+                      <button onClick={() => removeFromCart(item.test.id)} className="h-7 w-7 rounded-lg bg-red-50 flex items-center justify-center">
+                        <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="px-4 py-3 bg-slate-50">
+                <button
+                  onClick={() => { setStep("details"); setShowCart(false); }}
+                  className="w-full rounded-xl bg-blue-600 py-3 text-sm font-black text-white flex items-center justify-center gap-2 shadow-lg shadow-blue-200"
+                >
+                  Proceed to Book <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* ══ COMBOS TAB ══ */}
           {activeTab === "combos" && (
             <div className="space-y-3 px-4">
@@ -464,40 +499,6 @@ const LabTestsPage = () => {
           {activeTab === "tests" && (
             <div className="space-y-3 px-4">
 
-              {/* Cart Panel (inside tests tab) */}
-              {showCart && cart.length > 0 && (
-                <div className="bg-white rounded-2xl border border-purple-100 shadow-lg overflow-hidden">
-                  <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-                    <p className="font-black text-slate-800 text-sm">Cart ({cart.length} tests)</p>
-                    <p className="font-black text-purple-600">&#8377;{total}</p>
-                  </div>
-                  <div className="divide-y divide-slate-50">
-                    {cart.map((item) => (
-                      <div key={item.test.id} className="flex items-center justify-between px-4 py-3">
-                        <div>
-                          <p className="text-sm font-bold text-slate-700 truncate">{item.test.name}</p>
-                          <p className="text-[10px] font-medium text-slate-400">{item.test.turnaround}</p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <p className="font-black text-slate-800 text-sm">&#8377;{item.test.price}</p>
-                          <button onClick={() => removeFromCart(item.test.id)} className="h-7 w-7 rounded-lg bg-red-50 flex items-center justify-center">
-                            <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="px-4 py-3 bg-slate-50">
-                    <button
-                      onClick={() => { setStep("details"); setShowCart(false); }}
-                      className="w-full rounded-xl bg-blue-600 py-3 text-sm font-black text-white flex items-center justify-center gap-2 shadow-lg shadow-blue-200"
-                    >
-                      Proceed to Book <ChevronRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              )}
-
               {/* Test cards */}
               {isLoading ? (
                 <div className="flex flex-col items-center justify-center py-24 gap-3">
@@ -531,7 +532,12 @@ const LabTestsPage = () => {
                         </span>
                       </div>
                       <div className="flex items-center justify-between pt-3 border-t border-slate-50">
-                        <p className="text-xl font-black text-slate-800">&#8377;{test.price}</p>
+                        <div>
+                          {test.original_price ? (
+                            <p className="text-[10px] text-slate-400 line-through">&#8377;{test.original_price}</p>
+                          ) : null}
+                          <p className="text-xl font-black text-slate-800" style={test.original_price ? { color: cc.text } : {}}>&#8377;{test.price}</p>
+                        </div>
                         <button
                           onClick={() => inCart ? removeFromCart(test.id) : addToCart(test)}
                           className={`px-5 py-2 rounded-xl text-[11px] font-black transition-all active:scale-95 ${
