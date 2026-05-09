@@ -15,6 +15,7 @@ import TermsPage from "./pages/TermsPage";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 import RefundPolicyPage from "./pages/RefundPolicyPage";
 import ReturnPolicyPage from "./pages/ReturnPolicyPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import { AuthProvider } from "./contexts/AuthContext";
 import HospitalDashboard from "./pages/admin/HospitalDashboard";
 import LabDashboard from "./pages/admin/LabDashboard";
@@ -100,6 +101,7 @@ const AppRoutes = () => {
           <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
           <Route path="/refund-policy" element={<RefundPolicyPage />} />
           <Route path="/return-policy" element={<ReturnPolicyPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
         </>
       )}
 
