@@ -18,7 +18,11 @@ CREATE POLICY "Admins view all appointments"
 DROP POLICY IF EXISTS "Admins Can Upload Doctor Profiles" ON storage.objects;
 CREATE POLICY "Admins Can Upload Doctor Profiles" ON storage.objects
   FOR INSERT WITH CHECK (bucket_id = 'doctor_profiles');
+
+DROP POLICY IF EXISTS "Admins Can Update Doctor Profiles" ON storage.objects;
 CREATE POLICY "Admins Can Update Doctor Profiles" ON storage.objects
   FOR UPDATE USING (bucket_id = 'doctor_profiles');
+
+DROP POLICY IF EXISTS "Admins Can Delete Doctor Profiles" ON storage.objects;
 CREATE POLICY "Admins Can Delete Doctor Profiles" ON storage.objects
   FOR DELETE USING (bucket_id = 'doctor_profiles');
