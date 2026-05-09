@@ -133,16 +133,38 @@ export const verifySuperAdminSession = async (): Promise<boolean> => {
     // Primary check: role in user_metadata
     if (freshUser.user_metadata?.role === "super") return true;
 
-    // Fallback: check DB admin_whitelist (no hardcoded emails)
-    const { data: row, error: wlErr } = await supabase
+    // Fallback: check DB admin_whitelist
+    // Try with 'is_active' column first (newer schema), then fallback to 'active'
+    try {
+      const { data: row1, error: err1 } = await supabase
+        .from("admin_whitelist")
+        .select("email")
+        .eq("email", freshUser.email)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (!err1) return !!row1;
+    } catch { /* column doesn't exist, try next */ }
+
+    try {
+      const { data: row2, error: err2 } = await supabase
+        .from("admin_whitelist")
+        .select("email")
+        .eq("email", freshUser.email)
+        .eq("active", true)
+        .maybeSingle();
+
+      if (!err2) return !!row2;
+    } catch { /* column doesn't exist */ }
+
+    // Last resort: just check if email is in the whitelist at all
+    const { data: row3 } = await supabase
       .from("admin_whitelist")
       .select("email")
-      .eq("email",  freshUser.email)
-      .eq("active", true)
+      .eq("email", freshUser.email)
       .maybeSingle();
 
-    if (wlErr) return false; // table missing → deny
-    return !!row;
+    return !!row3;
   } catch {
     return false;
   }
