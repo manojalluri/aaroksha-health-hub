@@ -1,52 +1,56 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
-  Lock, Mail, ChevronRight, Truck, Loader2, Eye, EyeOff, ArrowLeft
+  Lock, Mail, ChevronRight, Loader2, Eye, EyeOff, ArrowLeft, AlertTriangle
 } from "lucide-react";
-import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-
-import { createPartnerSession, checkIsLoggedIn } from "@/lib/adminAuth";
+import { authenticatePartner, createPartnerSession, checkIsLoggedIn, isRateLimited, recordFailedAttempt, clearAttempts } from "@/lib/adminAuth";
 
 const LogisticsLogin = () => {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
+  const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading]   = useState(false);
   const [showPass, setShowPass] = useState(false);
+  const [lockoutMsg, setLockoutMsg] = useState<string | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    checkIsLoggedIn("logistics").then(ok => ok && navigate("/admin/logistics"));
+    checkIsLoggedIn("logistics").then(ok => { if (ok) navigate("/admin/logistics"); });
   }, [navigate]);
+  useEffect(() => () => { if (countdownRef.current) clearInterval(countdownRef.current); }, []);
+
+  const startLockoutCountdown = (waitMs: number) => {
+    let remaining = Math.ceil(waitMs / 1000);
+    setLockoutMsg(`Too many attempts. Try again in ${remaining}s.`);
+    countdownRef.current = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) { clearInterval(countdownRef.current!); setLockoutMsg(null); }
+      else setLockoutMsg(`Too many attempts. Try again in ${remaining}s.`);
+    }, 1000);
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanEmail = email.toLowerCase().trim();
+    const limitCheck = isRateLimited(cleanEmail);
+    if (limitCheck.blocked) { startLockoutCountdown(limitCheck.waitMs); return; }
+
     setLoading(true);
     try {
-      const { data: partner, error } = await supabase
-        .from("partners")
-        .select("*")
-        .eq("email", email.toLowerCase())
-        .eq("password", password)
-        .eq("type", "logistics")
-        .eq("status", "active")
-        .single();
+      const partner = await authenticatePartner(cleanEmail, password, "logistics");
+      if (!partner) throw new Error("Authentication failed");
 
-      if (error || !partner) throw new Error("Invalid logistics credentials or account inactive.");
+      const token = await createPartnerSession(partner.partner_id, "logistics");
+      if (!token) throw new Error("Session could not be created.");
 
-      // ── NEW SECURITY MODEL: Create a server-side session ───────────────
-      const sessionToken = await createPartnerSession(partner.partner_id, "logistics");
-      if (!sessionToken) throw new Error("Could not initialize secure session. Please check DB connection.");
-
-      // Fallback for UI names (non-critical, strictly for display)
-      localStorage.setItem("aaroksha_partner_session", JSON.stringify({
-        id: partner.id, partner_id: partner.partner_id, name: partner.name, role: "logistics"
-      }));
-
+      clearAttempts(cleanEmail);
       toast.success(`Welcome ${partner.name}!`);
       navigate("/admin/logistics");
-    } catch (err: any) {
-      toast.error(err.message || "Invalid credentials");
+    } catch {
+      const { blocked, waitMs } = recordFailedAttempt(cleanEmail);
+      if (blocked) { startLockoutCountdown(waitMs); toast.error("Account temporarily locked."); }
+      else toast.error("Invalid credentials or account inactive.");
     } finally {
       setLoading(false);
     }

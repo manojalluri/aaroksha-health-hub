@@ -1,45 +1,56 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
-  Lock, Mail, ChevronRight, FlaskConical, Loader2, Eye, EyeOff, ArrowLeft
+  Lock, Mail, ChevronRight, Loader2, Eye, EyeOff, ArrowLeft, AlertTriangle
 } from "lucide-react";
-import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { createPartnerSession, checkIsLoggedIn } from "@/lib/adminAuth";
+import { authenticatePartner, createPartnerSession, checkIsLoggedIn, isRateLimited, recordFailedAttempt, clearAttempts } from "@/lib/adminAuth";
 
 const LabLogin = () => {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
+  const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading]   = useState(false);
   const [showPass, setShowPass] = useState(false);
+  const [lockoutMsg, setLockoutMsg] = useState<string | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    checkIsLoggedIn("lab").then(ok => ok && navigate("/admin/lab"));
+    checkIsLoggedIn("lab").then(ok => { if (ok) navigate("/admin/lab"); });
   }, [navigate]);
+  useEffect(() => () => { if (countdownRef.current) clearInterval(countdownRef.current); }, []);
+
+  const startLockoutCountdown = (waitMs: number) => {
+    let remaining = Math.ceil(waitMs / 1000);
+    setLockoutMsg(`Too many attempts. Try again in ${remaining}s.`);
+    countdownRef.current = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) { clearInterval(countdownRef.current!); setLockoutMsg(null); }
+      else setLockoutMsg(`Too many attempts. Try again in ${remaining}s.`);
+    }, 1000);
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanEmail = email.toLowerCase().trim();
+    const limitCheck = isRateLimited(cleanEmail);
+    if (limitCheck.blocked) { startLockoutCountdown(limitCheck.waitMs); return; }
+
     setLoading(true);
     try {
-      const { data: partner, error } = await supabase
-        .from("partners")
-        .select("id, partner_id, name, type")
-        .eq("email", email.toLowerCase())
-        .eq("password", password)
-        .eq("type", "lab")
-        .eq("status", "active")
-        .single();
-
-      if (error || !partner) throw new Error("Invalid lab credentials or account inactive.");
+      const partner = await authenticatePartner(cleanEmail, password, "lab");
+      if (!partner) throw new Error("Authentication failed");
 
       const token = await createPartnerSession(partner.partner_id, "lab");
-      if (!token) throw new Error("Session could not be created. Try again.");
+      if (!token) throw new Error("Session could not be created.");
 
+      clearAttempts(cleanEmail);
       toast.success(`Welcome ${partner.name}!`);
       navigate("/admin/lab");
-    } catch (err: any) {
-      toast.error(err.message || "Invalid credentials");
+    } catch {
+      const { blocked, waitMs } = recordFailedAttempt(cleanEmail);
+      if (blocked) { startLockoutCountdown(waitMs); toast.error("Account temporarily locked."); }
+      else toast.error("Invalid credentials or account inactive.");
     } finally {
       setLoading(false);
     }

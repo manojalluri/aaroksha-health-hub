@@ -1,49 +1,57 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
-  Lock, Mail, ChevronRight, Stethoscope, Loader2, Eye, EyeOff, ArrowLeft
+  Lock, Mail, ChevronRight, Loader2, Eye, EyeOff, ArrowLeft, AlertTriangle
 } from "lucide-react";
-import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { createPartnerSession, checkIsLoggedIn } from "@/lib/adminAuth";
+import { authenticatePartner, createPartnerSession, checkIsLoggedIn, isRateLimited, recordFailedAttempt, clearAttempts } from "@/lib/adminAuth";
 
 const HospitalLogin = () => {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
+  const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading]   = useState(false);
   const [showPass, setShowPass] = useState(false);
+  const [lockoutMsg, setLockoutMsg] = useState<string | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    checkIsLoggedIn("hospital").then(ok => ok && navigate("/admin/hospital"));
+    checkIsLoggedIn("hospital").then(ok => { if (ok) navigate("/admin/hospital"); });
   }, [navigate]);
+  useEffect(() => () => { if (countdownRef.current) clearInterval(countdownRef.current); }, []);
+
+  const startLockoutCountdown = (waitMs: number) => {
+    let remaining = Math.ceil(waitMs / 1000);
+    setLockoutMsg(`Too many attempts. Try again in ${remaining}s.`);
+    countdownRef.current = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) { clearInterval(countdownRef.current!); setLockoutMsg(null); }
+      else setLockoutMsg(`Too many attempts. Try again in ${remaining}s.`);
+    }, 1000);
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanEmail = email.toLowerCase().trim();
+    const limitCheck = isRateLimited(cleanEmail);
+    if (limitCheck.blocked) { startLockoutCountdown(limitCheck.waitMs); return; }
+
     setLoading(true);
     try {
-      // Step 1: Verify against partners table
-      const { data: partner, error } = await supabase
-        .from("partners")
-        .select("id, partner_id, name, type")
-        .eq("email", email.toLowerCase())
-        .eq("password", password)
-        .eq("type", "hospital")
-        .eq("status", "active")
-        .single();
+      // Authenticate via RPC (bcrypt) with plaintext fallback
+      const partner = await authenticatePartner(cleanEmail, password, "hospital");
+      if (!partner) throw new Error("Authentication failed");
 
-      if (error || !partner) {
-        throw new Error("Invalid credentials or account inactive.");
-      }
-
-      // Step 2: Create a secure, DB-backed session token (sessionStorage only)
       const token = await createPartnerSession(partner.partner_id, "hospital");
-      if (!token) throw new Error("Session could not be created. Try again.");
+      if (!token) throw new Error("Session could not be created.");
 
+      clearAttempts(cleanEmail);
       toast.success(`Welcome back, ${partner.name}!`);
       navigate("/admin/hospital");
-    } catch (err: any) {
-      toast.error(err.message || "Invalid credentials");
+    } catch {
+      const { blocked, waitMs } = recordFailedAttempt(cleanEmail);
+      if (blocked) { startLockoutCountdown(waitMs); toast.error("Account temporarily locked."); }
+      else toast.error("Invalid credentials or account inactive.");
     } finally {
       setLoading(false);
     }
@@ -84,6 +92,13 @@ const HospitalLogin = () => {
 
         {/* Card */}
         <div className="bg-white/5 backdrop-blur-2xl border border-white/10 rounded-[2rem] p-8 shadow-2xl">
+          {/* Lockout banner */}
+          {lockoutMsg && (
+            <div className="mb-5 flex items-center gap-3 bg-red-900/30 border border-red-500/30 rounded-xl px-4 py-3">
+              <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
+              <p className="text-xs font-bold text-red-300">{lockoutMsg}</p>
+            </div>
+          )}
           <form onSubmit={handleLogin} className="space-y-5">
             {/* Email */}
             <div className="space-y-2">
@@ -93,10 +108,12 @@ const HospitalLogin = () => {
                 <input
                   type="email"
                   required
+                  autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  disabled={!!lockoutMsg}
                   placeholder="hospital@aaroksha.com"
-                  className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl pl-12 pr-4 text-white text-sm font-medium placeholder:text-slate-600 focus:border-blue-400/60 focus:bg-white/10 outline-none transition-all"
+                  className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl pl-12 pr-4 text-white text-sm font-medium placeholder:text-slate-600 focus:border-blue-400/60 focus:bg-white/10 outline-none transition-all disabled:opacity-40"
                 />
               </div>
             </div>
@@ -109,10 +126,12 @@ const HospitalLogin = () => {
                 <input
                   type={showPass ? "text" : "password"}
                   required
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  disabled={!!lockoutMsg}
                   placeholder="••••••••"
-                  className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl pl-12 pr-12 text-white text-sm font-medium placeholder:text-slate-600 focus:border-blue-400/60 focus:bg-white/10 outline-none transition-all"
+                  className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl pl-12 pr-12 text-white text-sm font-medium placeholder:text-slate-600 focus:border-blue-400/60 focus:bg-white/10 outline-none transition-all disabled:opacity-40"
                 />
                 <button
                   type="button"
@@ -133,7 +152,7 @@ const HospitalLogin = () => {
             {/* Submit */}
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !!lockoutMsg}
               className="w-full h-14 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-2xl shadow-xl shadow-blue-900/50 flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 mt-2"
               style={{ background: loading ? undefined : "linear-gradient(135deg, #2563eb, #1d4ed8)" }}
             >

@@ -1,82 +1,114 @@
-import { useState, useEffect } from "react";
+/**
+ * SuperAdminLogin — Secure email + password authentication.
+ *
+ * SECURITY NOTES:
+ *  - No hardcoded credentials or email whitelists in client-side code.
+ *  - Rate limiting: 5 attempts per 15 min (in-memory, see adminAuth.ts).
+ *  - Role verification is delegated to verifySuperAdminSession() which checks
+ *    Supabase JWT user_metadata.role === "super" OR DB admin_whitelist table.
+ *  - MFA (hardcoded 6-digit key) has been intentionally REMOVED as it was
+ *    client-side only and provided zero real security (key was "272727").
+ *  - Supabase Auth handles bcrypt hashing of passwords server-side.
+ */
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
-  Lock, Mail, ChevronRight, ShieldCheck, Loader2, Eye, EyeOff, ArrowLeft, KeyRound
+  Lock, Mail, ChevronRight, ShieldCheck, Loader2, Eye, EyeOff, ArrowLeft, AlertTriangle
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { checkIsLoggedIn } from "@/lib/adminAuth";
+import { checkIsLoggedIn, isRateLimited, recordFailedAttempt, clearAttempts } from "@/lib/adminAuth";
 
 const SuperAdminLogin = () => {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
+  const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
-  const [securityKey, setSecurityKey] = useState("");
-  const [step, setStep] = useState(1); // 1: Password, 2: Security Key
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading]   = useState(false);
   const [showPass, setShowPass] = useState(false);
+  const [lockoutMsg, setLockoutMsg] = useState<string | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Redirect if already authenticated
   useEffect(() => {
-    checkIsLoggedIn("super").then(ok => ok && navigate("/admin/super"));
+    checkIsLoggedIn("super").then(ok => { if (ok) navigate("/admin/super"); });
   }, [navigate]);
 
-  // Production Whitelist (Strict Enforcement)
-  const ALLOWED_EMAILS = ["manojalluri2727@gmail.com", "super@aaroksha.com", "admin@aaroksha.com"];
-  
-  // High-Security Master Key (Simulating 2FA/TOTP)
-  const MASTER_SECURITY_KEY = "272727"; 
+  // Cleanup countdown on unmount
+  useEffect(() => () => { if (countdownRef.current) clearInterval(countdownRef.current); }, []);
 
-  const handleStep1 = async (e: React.FormEvent) => {
+  /** Start a visible countdown during an account lockout. */
+  const startLockoutCountdown = (waitMs: number) => {
+    let remaining = Math.ceil(waitMs / 1000);
+    setLockoutMsg(`Too many attempts. Try again in ${remaining}s.`);
+
+    countdownRef.current = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearInterval(countdownRef.current!);
+        setLockoutMsg(null);
+      } else {
+        setLockoutMsg(`Too many attempts. Try again in ${remaining}s.`);
+      }
+    }, 1000);
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!ALLOWED_EMAILS.includes(email.toLowerCase())) {
-      toast.error("Access Denied: This email is not on the platform's administrative whitelist.");
+
+    // ── Rate-limit check (client-side fast-path) ──
+    const cleanEmail = email.toLowerCase().trim();
+    const limitCheck = isRateLimited(cleanEmail);
+    if (limitCheck.blocked) {
+      startLockoutCountdown(limitCheck.waitMs);
       return;
     }
 
     setLoading(true);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      // ── Supabase Auth: bcrypt hash comparison happens server-side ──
+      const { data, error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
       if (error) throw error;
-      
-      const role = data.user?.user_metadata?.role;
-      const userEmail = data.user?.email;
 
-      const isSuper = role === "super" || ALLOWED_EMAILS.includes(userEmail || "");
+      const user = data.user;
+      if (!user) throw new Error("Authentication failed. No user returned.");
 
-      if (isSuper) {
-        setStep(2);
-        toast.success("Identity verified. Please provide your Master Security Key.");
-      } else {
-        toast.error("Access denied. Insufficient permissions for this portal.");
+      // ── Role check: must be super admin (verified in adminAuth.verifySuperAdminSession) ──
+      // verifySuperAdminSession checks JWT metadata OR DB admin_whitelist
+      const { verifySuperAdminSession } = await import("@/lib/adminAuth");
+      const isAuthorized = await verifySuperAdminSession();
+
+      if (!isAuthorized) {
+        // Sign out the Supabase session immediately — user is authenticated but not authorized
         await supabase.auth.signOut();
+        recordFailedAttempt(cleanEmail);
+        throw new Error("Access denied. Your account does not have Super Admin privileges.");
       }
-    } catch (err: any) {
-      toast.error(err.message || "Invalid administrative credentials");
+
+      // ── Success ──
+      clearAttempts(cleanEmail);
+      toast.success("Access granted. Welcome to the Super Admin portal.");
+      navigate("/admin/super");
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : "Authentication failed";
+
+      // Record failed attempt for rate limiting
+      const { blocked, waitMs } = recordFailedAttempt(cleanEmail);
+      if (blocked) {
+        startLockoutCountdown(waitMs);
+        toast.error("Account temporarily locked due to multiple failed attempts.");
+      } else {
+        // Generic error message — no internal details exposed to attacker
+        toast.error("Invalid credentials or insufficient privileges.");
+        console.error("[SuperAdminLogin] Auth error:", errMsg); // server-side log only
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleStep2 = (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-
-    // Simulate server-side key validation
-    setTimeout(() => {
-      if (securityKey === MASTER_SECURITY_KEY) {
-        toast.success("Security Clearance Granted");
-        navigate("/admin/super");
-      } else {
-        toast.error("Invalid Security Key. This attempt has been logged.");
-        setLoading(false);
-      }
-    }, 800);
-  };
-
   return (
     <div className="min-h-screen relative overflow-hidden flex items-center justify-center" style={{ background: "linear-gradient(135deg, #020617 0%, #0f172a 50%, #1e293b 100%)" }}>
-      {/* Background elements */}
+      {/* Decorative background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 right-0 w-96 h-96 rounded-full opacity-10" style={{ background: "radial-gradient(circle, #f59e0b, transparent)" }} />
         <div className="absolute bottom-0 -left-24 w-80 h-80 rounded-full opacity-10" style={{ background: "radial-gradient(circle, #d97706, transparent)" }} />
@@ -103,115 +135,89 @@ const SuperAdminLogin = () => {
           <div className="mt-3 flex items-center gap-2 bg-amber-400/10 border border-amber-400/20 px-4 py-1.5 rounded-full">
             <ShieldCheck className="h-3.5 w-3.5 text-amber-400" />
             <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">
-              {step === 1 ? "Level 5 Clearance Required" : "Identity Verification Pending"}
+              Level 5 Clearance Required
             </span>
           </div>
         </div>
 
         <div className="bg-white/[0.04] backdrop-blur-2xl border border-white/10 rounded-[2rem] p-8 shadow-2xl">
-          {step === 1 ? (
-            <form onSubmit={handleStep1} className="space-y-5">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-amber-400/70 uppercase tracking-widest pl-1">Admin Email</label>
-                <div className="relative group">
-                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-500 group-focus-within:text-amber-400 transition-colors" />
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="super@aaroksha.com"
-                    className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl pl-12 pr-4 text-white text-sm font-medium outline-none focus:border-amber-400/60 transition-all"
-                  />
-                </div>
-              </div>
+          {/* Lockout banner */}
+          {lockoutMsg && (
+            <div className="mb-5 flex items-center gap-3 bg-red-900/30 border border-red-500/30 rounded-xl px-4 py-3">
+              <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
+              <p className="text-xs font-bold text-red-300">{lockoutMsg}</p>
+            </div>
+          )}
 
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-amber-400/70 uppercase tracking-widest pl-1">Master Password</label>
-                <div className="relative group">
-                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-500 group-focus-within:text-amber-400 transition-colors" />
-                  <input
-                    type={showPass ? "text" : "password"}
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••••••"
-                    className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl pl-12 pr-12 text-white text-sm font-medium outline-none focus:border-amber-400/60 transition-all"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPass(!showPass)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-amber-400"
-                  >
-                    {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
+          <form onSubmit={handleLogin} className="space-y-5">
+            <div className="space-y-2">
+              <label htmlFor="sa-email" className="text-[10px] font-black text-amber-400/70 uppercase tracking-widest pl-1">Admin Email</label>
+              <div className="relative group">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-500 group-focus-within:text-amber-400 transition-colors" />
+                <input
+                  id="sa-email"
+                  type="email"
+                  required
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={!!lockoutMsg}
+                  placeholder="super@aaroksha.com"
+                  className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl pl-12 pr-4 text-white text-sm font-medium outline-none focus:border-amber-400/60 transition-all disabled:opacity-40"
+                />
               </div>
+            </div>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full h-14 text-white font-black rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 mt-2"
-                style={{ background: "linear-gradient(135deg, #d97706, #92400e)", boxShadow: "0 10px 40px rgba(180,83,9,0.3)" }}
-              >
-                {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <><span>Next Step</span><ChevronRight className="h-5 w-5" /></>}
-              </button>
-            </form>
-          ) : (
-            <form onSubmit={handleStep2} className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
-              <div className="space-y-2">
-                <div className="flex flex-col items-center text-center mb-4">
-                  <div className="h-12 w-12 rounded-full bg-amber-400/10 flex items-center justify-center mb-3">
-                    <KeyRound className="h-6 w-6 text-amber-400" />
-                  </div>
-                  <h3 className="text-white font-bold">Two-Factor Security</h3>
-                  <p className="text-xs text-slate-400 mt-1">Please enter your 6-digit administrative security key to continue.</p>
-                </div>
-                <div className="relative">
-                  <input
-                    type="password"
-                    maxLength={6}
-                    required
-                    autoFocus
-                    value={securityKey}
-                    onChange={(e) => setSecurityKey(e.target.value)}
-                    placeholder="000000"
-                    className="w-full h-16 bg-white/5 border border-white/10 rounded-2xl text-center text-2xl font-black tracking-[0.5em] text-white outline-none focus:border-amber-400 transition-all placeholder:text-slate-800"
-                  />
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-3">
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full h-14 text-white font-black rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
-                  style={{ background: "linear-gradient(135deg, #d97706, #92400e)", boxShadow: "0 10px 40px rgba(180,83,9,0.3)" }}
-                >
-                  {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <span>Verify Security Key</span>}
-                </button>
+            <div className="space-y-2">
+              <label htmlFor="sa-password" className="text-[10px] font-black text-amber-400/70 uppercase tracking-widest pl-1">Master Password</label>
+              <div className="relative group">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-500 group-focus-within:text-amber-400 transition-colors" />
+                <input
+                  id="sa-password"
+                  type={showPass ? "text" : "password"}
+                  required
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={!!lockoutMsg}
+                  placeholder="••••••••••••"
+                  className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl pl-12 pr-12 text-white text-sm font-medium outline-none focus:border-amber-400/60 transition-all disabled:opacity-40"
+                />
                 <button
                   type="button"
-                  onClick={() => setStep(1)}
-                  className="text-xs font-bold text-slate-500 hover:text-white transition-colors"
+                  onClick={() => setShowPass(!showPass)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-amber-400"
+                  aria-label={showPass ? "Hide password" : "Show password"}
                 >
-                  Return to Step 1
+                  {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
-            </form>
-          )}
+            </div>
+
+            <button
+              type="submit"
+              id="super-admin-login-btn"
+              disabled={loading || !!lockoutMsg}
+              className="w-full h-14 text-white font-black rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 mt-2"
+              style={{ background: "linear-gradient(135deg, #d97706, #92400e)", boxShadow: "0 10px 40px rgba(180,83,9,0.3)" }}
+            >
+              {loading
+                ? <Loader2 className="h-5 w-5 animate-spin" />
+                : <><span>Access Admin Portal</span><ChevronRight className="h-5 w-5" /></>}
+            </button>
+          </form>
 
           <div className="mt-8 pt-6 border-t border-white/5">
             <div className="bg-amber-400/5 border border-amber-400/10 rounded-xl p-3 text-center">
               <p className="text-[10px] text-amber-400/50 font-bold uppercase tracking-widest leading-relaxed">
-                🛡️ MFA ENFORCED<br />Your location and IP have been recorded
+                🔐 Encrypted · Server-Verified<br />Unauthorized access attempts are logged
               </p>
             </div>
           </div>
         </div>
 
         <p className="text-center mt-6 text-[10px] text-slate-700 font-bold uppercase tracking-widest">
-          © 2026 Aaroksha Health · Distributed Ledger Security
+          © 2026 Aaroksha Health · Enterprise Security
         </p>
       </div>
     </div>
@@ -219,3 +225,4 @@ const SuperAdminLogin = () => {
 };
 
 export default SuperAdminLogin;
+

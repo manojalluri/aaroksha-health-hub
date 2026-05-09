@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import {
   Mail, Phone, Lock, User, Loader2, CheckCircle,
   Eye, EyeOff, MapPin,
@@ -177,9 +177,6 @@ const AuthPage = () => {
 
         {/* ── Brand ── */}
         <div className="flex flex-col items-center mb-10 text-center">
-          <div className="h-16 w-16 rounded-3xl bg-blue-600 flex items-center justify-center mb-4 shadow-xl shadow-blue-200">
-            <span className="text-white font-black text-2xl">A</span>
-          </div>
           <h1 className="text-3xl font-black text-slate-800 tracking-tight">AAROKSHA</h1>
           <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-[10px] mt-1">
             Health Hub · Bhimavaram
@@ -316,8 +313,12 @@ const AuthPage = () => {
 
         <p className="text-center text-[10px] text-slate-400 font-medium mt-8 max-w-[240px] mx-auto leading-relaxed">
           By joining, you agree to our{" "}
-          <span className="text-slate-600 font-bold">Terms of Service</span> and{" "}
-          <span className="text-slate-600 font-bold">Privacy Policy</span>.
+          <Link to="/terms-and-conditions" className="text-slate-600 font-bold hover:text-blue-600 underline underline-offset-2 transition-colors">
+            Terms of Service
+          </Link>{" "}and{" "}
+          <Link to="/privacy-policy" className="text-slate-600 font-bold hover:text-blue-600 underline underline-offset-2 transition-colors">
+            Privacy Policy
+          </Link>.
         </p>
 
       </div>

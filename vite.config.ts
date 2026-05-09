@@ -6,11 +6,9 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-console.log("vite.config.ts: loading config, __dirname:", __dirname);
-
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-  console.log("vite.config.ts: defining config for mode:", mode);
+  const isProd = mode === "production";
   return {
     server: {
       host: "::",
