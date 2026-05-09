@@ -463,65 +463,92 @@ const LabTestsPage = () => {
           {/* ══ INDIVIDUAL TESTS TAB ══ */}
           {activeTab === "tests" && (
             <div className="space-y-3 px-4">
-                <button
-                  onClick={() => { setStep("details"); setShowCart(false); }}
-                  className="w-full rounded-xl bg-blue-600 py-3 text-sm font-black text-white flex items-center justify-center gap-2 shadow-lg shadow-blue-200"
-                >
-                  Proceed to Book <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
+
+              {/* Cart Panel (inside tests tab) */}
+              {showCart && cart.length > 0 && (
+                <div className="bg-white rounded-2xl border border-purple-100 shadow-lg overflow-hidden">
+                  <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+                    <p className="font-black text-slate-800 text-sm">Cart ({cart.length} tests)</p>
+                    <p className="font-black text-purple-600">&#8377;{total}</p>
+                  </div>
+                  <div className="divide-y divide-slate-50">
+                    {cart.map((item) => (
+                      <div key={item.test.id} className="flex items-center justify-between px-4 py-3">
+                        <div>
+                          <p className="text-sm font-bold text-slate-700 truncate">{item.test.name}</p>
+                          <p className="text-[10px] font-medium text-slate-400">{item.test.turnaround}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <p className="font-black text-slate-800 text-sm">&#8377;{item.test.price}</p>
+                          <button onClick={() => removeFromCart(item.test.id)} className="h-7 w-7 rounded-lg bg-red-50 flex items-center justify-center">
+                            <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="px-4 py-3 bg-slate-50">
+                    <button
+                      onClick={() => { setStep("details"); setShowCart(false); }}
+                      className="w-full rounded-xl bg-blue-600 py-3 text-sm font-black text-white flex items-center justify-center gap-2 shadow-lg shadow-blue-200"
+                    >
+                      Proceed to Book <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Test cards */}
+              {isLoading ? (
+                <div className="flex flex-col items-center justify-center py-24 gap-3">
+                  <Loader2 className="h-8 w-8 text-purple-600 animate-spin" />
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading tests...</p>
+                </div>
+              ) : (
+                filtered.map((test) => {
+                  const inCart = cart.some((c) => c.test.id === test.id);
+                  const cc = categoryColors[test.category] || { bg: "#e2e8f0", text: "#64748b" };
+                  return (
+                    <div key={test.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <h3 className="font-black text-slate-800 text-sm leading-tight flex-1">{test.name}</h3>
+                        <span
+                          className="text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full shrink-0"
+                          style={{ backgroundColor: cc.bg, color: cc.text }}
+                        >
+                          {test.category}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 font-medium leading-relaxed mb-3 line-clamp-2">
+                        {test.description}
+                      </p>
+                      <div className="flex items-center gap-4 mb-3">
+                        <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
+                          <Clock className="h-3 w-3" /> {test.turnaround}
+                        </span>
+                        <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
+                          <TestTube className="h-3 w-3" /> Home collection
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between pt-3 border-t border-slate-50">
+                        <p className="text-xl font-black text-slate-800">&#8377;{test.price}</p>
+                        <button
+                          onClick={() => inCart ? removeFromCart(test.id) : addToCart(test)}
+                          className={`px-5 py-2 rounded-xl text-[11px] font-black transition-all active:scale-95 ${
+                            inCart ? "bg-red-50 text-red-500 border border-red-100" : "text-white shadow-md"
+                          }`}
+                          style={!inCart ? { backgroundColor: cc.text, boxShadow: `0 4px 10px ${cc.text}40` } : {}}
+                        >
+                          {inCart ? "✕ Remove" : "+ Add"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           )}
 
-            {isLoading ? (
-              <div className="flex flex-col items-center justify-center py-24 gap-3">
-                <Loader2 className="h-8 w-8 text-purple-600 animate-spin" />
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading tests...</p>
-              </div>
-            ) : (
-              filtered.map((test) => {
-                const inCart = cart.some((c) => c.test.id === test.id);
-                const cc = categoryColors[test.category] || { bg: "#e2e8f0", text: "#64748b" };
-                return (
-                  <div key={test.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <h3 className="font-black text-slate-800 text-sm leading-tight flex-1">{test.name}</h3>
-                      <span
-                        className="text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full shrink-0"
-                        style={{ backgroundColor: cc.bg, color: cc.text }}
-                      >
-                        {test.category}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 font-medium leading-relaxed mb-3 line-clamp-2">
-                      {test.description}
-                    </p>
-                    <div className="flex items-center gap-4 mb-3">
-                      <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
-                        <Clock className="h-3 w-3" /> {test.turnaround}
-                      </span>
-                      <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
-                        <TestTube className="h-3 w-3" /> Home collection
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between pt-3 border-t border-slate-50">
-                      <p className="text-xl font-black text-slate-800">₹{test.price}</p>
-                      <button
-                        onClick={() => inCart ? removeFromCart(test.id) : addToCart(test)}
-                        className={`px-5 py-2 rounded-xl text-[11px] font-black transition-all active:scale-95 ${
-                          inCart ? "bg-red-50 text-red-500 border border-red-100" : "text-white shadow-md"
-                        }`}
-                        style={!inCart ? { backgroundColor: cc.text, boxShadow: `0 4px 10px ${cc.text}40` } : {}}
-                      >
-                        {inCart ? "✕ Remove" : "+ Add"}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-            </div>
-          )}
         </main>
       )}
 
