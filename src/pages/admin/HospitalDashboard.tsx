@@ -156,6 +156,8 @@ const HospitalDashboard = () => {
   const todayDate = new Date().toISOString().split("T")[0];
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [settlementFilter, setSettlementFilter] = useState<"all" | "today" | "yesterday">("all");
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  const [editPartner, setEditPartner] = useState<any>(null);
 
   const [newDoctor, setNewDoctor] = useState<Partial<Doctor>>({
     name: "", specialty: "", qualification: "MBBS", experience: 0,
@@ -297,6 +299,25 @@ const HospitalDashboard = () => {
       toast.success("Appointment updated");
     },
     onError: (e: any) => toast.error("Failed: " + e.message),
+  });
+
+  // Update Partner Profile
+  const updatePartnerMutation = useMutation({
+    mutationFn: async (updated: any) => {
+      const { error } = await supabase.from("partners").update({
+        name: updated.name,
+        phone: updated.phone,
+        address: updated.address
+      }).eq("partner_id", partnerId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setPartner((prev: any) => ({ ...prev, ...editPartner }));
+      setHospitalName(editPartner.name);
+      setProfileDialogOpen(false);
+      toast.success("Hospital profile updated!");
+    },
+    onError: (e: any) => toast.error("Update failed: " + e.message),
   });
 
   // Image upload
@@ -909,6 +930,15 @@ const HospitalDashboard = () => {
                           </div>
                         ))}
                       </div>
+
+                      <div className="pt-4 flex justify-center md:justify-start">
+                        <Button 
+                          onClick={() => { setEditPartner({ ...partner }); setProfileDialogOpen(true); }}
+                          className="bg-blue-600 hover:bg-blue-700 font-bold px-8 rounded-xl shadow-lg shadow-blue-100"
+                        >
+                          <Edit className="h-4 w-4 mr-2" /> Edit Profile
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1133,6 +1163,45 @@ const HospitalDashboard = () => {
                   <UserCheck className="h-4 w-4 mr-2" /> Confirm Appointment
                 </Button>
               )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      )}
+
+      {/* EDIT PROFILE DIALOG */}
+      <Dialog open={profileDialogOpen} onOpenChange={setProfileDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-blue-600" /> Edit Hospital Profile
+            </DialogTitle>
+          </DialogHeader>
+          {editPartner && (
+            <div className="space-y-4 mt-2">
+              <div className="space-y-1">
+                <Label>Hospital Name</Label>
+                <Input value={editPartner.name || ""} onChange={e => setEditPartner({ ...editPartner, name: e.target.value })} />
+              </div>
+              <div className="space-y-1">
+                <Label>Contact Phone</Label>
+                <Input value={editPartner.phone || ""} onChange={e => setEditPartner({ ...editPartner, phone: e.target.value })} />
+              </div>
+              <div className="space-y-1">
+                <Label>Address</Label>
+                <Input value={editPartner.address || ""} onChange={e => setEditPartner({ ...editPartner, address: e.target.value })} />
+              </div>
+              
+              <div className="flex gap-3 pt-4">
+                <Button className="flex-1 bg-blue-600 hover:bg-blue-700" 
+                  disabled={updatePartnerMutation.isPending} 
+                  onClick={() => updatePartnerMutation.mutate(editPartner)}>
+                  {updatePartnerMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle className="h-4 w-4 mr-2" />}
+                  Save Profile
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => setProfileDialogOpen(false)}>Cancel</Button>
+              </div>
             </div>
           )}
         </DialogContent>
