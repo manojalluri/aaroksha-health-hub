@@ -1168,7 +1168,6 @@ const HospitalDashboard = () => {
         </DialogContent>
       </Dialog>
 
-      )}
 
       {/* EDIT PROFILE DIALOG */}
       <Dialog open={profileDialogOpen} onOpenChange={setProfileDialogOpen}>
