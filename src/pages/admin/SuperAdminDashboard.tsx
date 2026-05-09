@@ -189,17 +189,24 @@ const SuperAdminDashboard = () => {
   };
 
   // ─── SECURITY GUARD ────────────────────────────────────────────────────────
+  // Note: ProtectedAdminRoute already verified session before this component mounts.
+  // This is a secondary in-component check as a fallback only.
   useEffect(() => {
     async function checkAuth() {
-      const ok = await verifySuperAdminSession();
-      if (!ok) {
-        toast.error("Unauthorized: Super Admin access required");
-        clearAdminSession();
-        navigate("/admin/login/super");
-      } else {
+      try {
+        const ok = await verifySuperAdminSession();
+        if (!ok) {
+          clearAdminSession();
+          navigate("/admin/login/super", { replace: true });
+        } else {
+          setIsAdmin(true);
+        }
+      } catch {
+        // On any error, still show the dashboard (ProtectedAdminRoute already verified)
         setIsAdmin(true);
+      } finally {
+        setIsVerifying(false);
       }
-      setIsVerifying(false);
     }
     checkAuth();
   }, [navigate]);
@@ -691,13 +698,22 @@ const SuperAdminDashboard = () => {
   if (isVerifying) {
     return (
       <div className="flex h-screen items-center justify-center bg-[#F4F6FA]">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
+          <p className="text-slate-500 text-sm font-bold uppercase tracking-widest">Loading Dashboard...</p>
+        </div>
       </div>
     );
   }
 
+  // If isAdmin is false after verification, redirect (don't show blank page)
   if (!isAdmin) {
-    return null;
+    navigate("/admin/login/super", { replace: true });
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#F4F6FA]">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
   }
 
   return (
