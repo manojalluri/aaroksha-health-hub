@@ -13,7 +13,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
-  Lock, Mail, ChevronRight, ShieldCheck, Loader2, Eye, EyeOff, ArrowLeft, AlertTriangle
+  Lock, Mail, ChevronRight, ShieldCheck, Loader2, Eye, EyeOff, ArrowLeft, AlertTriangle, KeyRound, CheckCircle2
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
@@ -21,11 +21,14 @@ import { checkIsLoggedIn, isRateLimited, recordFailedAttempt, clearAttempts } fr
 
 const SuperAdminLogin = () => {
   const navigate = useNavigate();
-  const [email, setEmail]       = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading]   = useState(false);
-  const [showPass, setShowPass] = useState(false);
+  const [email, setEmail]           = useState("");
+  const [password, setPassword]     = useState("");
+  const [loading, setLoading]       = useState(false);
+  const [showPass, setShowPass]     = useState(false);
   const [lockoutMsg, setLockoutMsg] = useState<string | null>(null);
+  const [mode, setMode]             = useState<"login" | "forgot" | "sent">("login");
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Redirect if already authenticated
@@ -106,13 +109,36 @@ const SuperAdminLogin = () => {
     }
   };
 
+  /** Send password reset email via Supabase — goes to the registered email */
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = resetEmail.toLowerCase().trim();
+    if (!cleanEmail) {
+      toast.error("Please enter your admin email address.");
+      return;
+    }
+    setResetLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: `${window.location.origin}/admin/reset-password`,
+      });
+      if (error) throw error;
+      setMode("sent");
+      toast.success("Password reset email sent! Check your inbox.");
+    } catch (err: any) {
+      toast.error("Failed to send reset email. Make sure the email is registered.");
+      console.error("[ForgotPassword]", err.message);
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen relative overflow-hidden flex items-center justify-center" style={{ background: "linear-gradient(135deg, #020617 0%, #0f172a 50%, #1e293b 100%)" }}>
       {/* Decorative background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 right-0 w-96 h-96 rounded-full opacity-10" style={{ background: "radial-gradient(circle, #f59e0b, transparent)" }} />
         <div className="absolute bottom-0 -left-24 w-80 h-80 rounded-full opacity-10" style={{ background: "radial-gradient(circle, #d97706, transparent)" }} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full opacity-[0.03]" style={{ background: "radial-gradient(circle, #fff, transparent)" }} />
         <svg className="absolute inset-0 w-full h-full opacity-[0.03]" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <pattern id="super-hex" x="0" y="0" width="80" height="90" patternUnits="userSpaceOnUse">
@@ -130,82 +156,139 @@ const SuperAdminLogin = () => {
         </Link>
 
         <div className="flex flex-col items-center mb-10">
-          <h1 className="text-3xl font-black text-white tracking-tight">Super Admin</h1>
+          <h1 className="text-3xl font-black text-white tracking-tight">
+            {mode === "login" ? "Super Admin" : mode === "forgot" ? "Reset Password" : "Email Sent"}
+          </h1>
           <p className="text-amber-400/70 text-[11px] font-bold uppercase tracking-[0.2em] mt-2">Aaroksha Health · Restricted Access</p>
           <div className="mt-3 flex items-center gap-2 bg-amber-400/10 border border-amber-400/20 px-4 py-1.5 rounded-full">
             <ShieldCheck className="h-3.5 w-3.5 text-amber-400" />
             <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">
-              Level 5 Clearance Required
+              {mode === "login" ? "Level 5 Clearance Required" : "Secure Password Reset"}
             </span>
           </div>
         </div>
 
         <div className="bg-white/[0.04] backdrop-blur-2xl border border-white/10 rounded-[2rem] p-8 shadow-2xl">
-          {/* Lockout banner */}
-          {lockoutMsg && (
-            <div className="mb-5 flex items-center gap-3 bg-red-900/30 border border-red-500/30 rounded-xl px-4 py-3">
-              <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
-              <p className="text-xs font-bold text-red-300">{lockoutMsg}</p>
-            </div>
+          {/* ── LOGIN MODE ── */}
+          {mode === "login" && (
+            <>
+              {/* Lockout banner */}
+              {lockoutMsg && (
+                <div className="mb-5 flex items-center gap-3 bg-red-900/30 border border-red-500/30 rounded-xl px-4 py-3">
+                  <AlertTriangle className="h-4 w-4 text-red-400 shrink-0" />
+                  <p className="text-xs font-bold text-red-300">{lockoutMsg}</p>
+                </div>
+              )}
+
+              <form onSubmit={handleLogin} className="space-y-5">
+                <div className="space-y-2">
+                  <label htmlFor="sa-email" className="text-[10px] font-black text-amber-400/70 uppercase tracking-widest pl-1">Admin Email</label>
+                  <div className="relative group">
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-500 group-focus-within:text-amber-400 transition-colors" />
+                    <input
+                      id="sa-email" type="email" required autoComplete="email"
+                      value={email} onChange={(e) => setEmail(e.target.value)}
+                      disabled={!!lockoutMsg}
+                      placeholder="super@aaroksha.com"
+                      className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl pl-12 pr-4 text-white text-sm font-medium outline-none focus:border-amber-400/60 transition-all disabled:opacity-40"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label htmlFor="sa-password" className="text-[10px] font-black text-amber-400/70 uppercase tracking-widest pl-1">Master Password</label>
+                  <div className="relative group">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-500 group-focus-within:text-amber-400 transition-colors" />
+                    <input
+                      id="sa-password" type={showPass ? "text" : "password"} required autoComplete="current-password"
+                      value={password} onChange={(e) => setPassword(e.target.value)}
+                      disabled={!!lockoutMsg}
+                      placeholder="••••••••••••"
+                      className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl pl-12 pr-12 text-white text-sm font-medium outline-none focus:border-amber-400/60 transition-all disabled:opacity-40"
+                    />
+                    <button type="button" onClick={() => setShowPass(!showPass)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-amber-400"
+                      aria-label={showPass ? "Hide password" : "Show password"}>
+                      {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Forgot Password link */}
+                <div className="flex justify-end">
+                  <button type="button" onClick={() => { setMode("forgot"); setResetEmail(email); }}
+                    className="text-[11px] text-amber-400/60 hover:text-amber-400 font-bold transition-colors underline underline-offset-2">
+                    Forgot Password?
+                  </button>
+                </div>
+
+                <button type="submit" id="super-admin-login-btn"
+                  disabled={loading || !!lockoutMsg}
+                  className="w-full h-14 text-white font-black rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 mt-2"
+                  style={{ background: "linear-gradient(135deg, #d97706, #92400e)", boxShadow: "0 10px 40px rgba(180,83,9,0.3)" }}>
+                  {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <><span>Access Admin Portal</span><ChevronRight className="h-5 w-5" /></>}
+                </button>
+              </form>
+            </>
           )}
 
-          <form onSubmit={handleLogin} className="space-y-5">
-            <div className="space-y-2">
-              <label htmlFor="sa-email" className="text-[10px] font-black text-amber-400/70 uppercase tracking-widest pl-1">Admin Email</label>
-              <div className="relative group">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-500 group-focus-within:text-amber-400 transition-colors" />
-                <input
-                  id="sa-email"
-                  type="email"
-                  required
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  disabled={!!lockoutMsg}
-                  placeholder="super@aaroksha.com"
-                  className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl pl-12 pr-4 text-white text-sm font-medium outline-none focus:border-amber-400/60 transition-all disabled:opacity-40"
-                />
+          {/* ── FORGOT PASSWORD MODE ── */}
+          {mode === "forgot" && (
+            <form onSubmit={handleForgotPassword} className="space-y-5">
+              <p className="text-slate-400 text-sm leading-relaxed">
+                Enter your Super Admin email. A secure password reset link will be sent to <span className="text-amber-400 font-bold">manojalluri2727@gmail.com</span>.
+              </p>
+              <div className="space-y-2">
+                <label htmlFor="reset-email" className="text-[10px] font-black text-amber-400/70 uppercase tracking-widest pl-1">Admin Email</label>
+                <div className="relative group">
+                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-500 group-focus-within:text-amber-400 transition-colors" />
+                  <input
+                    id="reset-email" type="email" required
+                    value={resetEmail} onChange={(e) => setResetEmail(e.target.value)}
+                    placeholder="manojalluri2727@gmail.com"
+                    className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl pl-12 pr-4 text-white text-sm font-medium outline-none focus:border-amber-400/60 transition-all"
+                  />
+                </div>
               </div>
-            </div>
+              <button type="submit" disabled={resetLoading}
+                className="w-full h-14 text-white font-black rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+                style={{ background: "linear-gradient(135deg, #d97706, #92400e)", boxShadow: "0 10px 40px rgba(180,83,9,0.3)" }}>
+                {resetLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <><KeyRound className="h-5 w-5" /><span>Send Reset Link</span></>}
+              </button>
+              <button type="button" onClick={() => setMode("login")}
+                className="w-full text-slate-500 hover:text-white text-sm font-bold transition-colors py-2">
+                ← Back to Login
+              </button>
+            </form>
+          )}
 
-            <div className="space-y-2">
-              <label htmlFor="sa-password" className="text-[10px] font-black text-amber-400/70 uppercase tracking-widest pl-1">Master Password</label>
-              <div className="relative group">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-500 group-focus-within:text-amber-400 transition-colors" />
-                <input
-                  id="sa-password"
-                  type={showPass ? "text" : "password"}
-                  required
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={!!lockoutMsg}
-                  placeholder="••••••••••••"
-                  className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl pl-12 pr-12 text-white text-sm font-medium outline-none focus:border-amber-400/60 transition-all disabled:opacity-40"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPass(!showPass)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-amber-400"
-                  aria-label={showPass ? "Hide password" : "Show password"}
-                >
-                  {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
+          {/* ── EMAIL SENT MODE ── */}
+          {mode === "sent" && (
+            <div className="flex flex-col items-center text-center gap-5 py-4">
+              <div className="h-20 w-20 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+                <CheckCircle2 className="h-10 w-10 text-emerald-400" />
               </div>
+              <div>
+                <p className="text-white font-black text-lg">Check Your Inbox!</p>
+                <p className="text-slate-400 text-sm mt-2 leading-relaxed">
+                  A password reset link has been sent to <span className="text-amber-400 font-bold">manojalluri2727@gmail.com</span>.
+                  Click the link in the email to set a new password.
+                </p>
+              </div>
+              <div className="bg-amber-400/10 border border-amber-400/20 rounded-xl p-4 text-left w-full">
+                <p className="text-[11px] text-amber-400 font-bold">📧 Didn't receive it?</p>
+                <p className="text-[11px] text-slate-500 mt-1">Check your spam folder. The link expires in 1 hour.</p>
+              </div>
+              <button onClick={() => setMode("forgot")}
+                className="text-amber-400/60 hover:text-amber-400 text-sm font-bold transition-colors underline underline-offset-2">
+                Resend Email
+              </button>
+              <button onClick={() => setMode("login")}
+                className="text-slate-500 hover:text-white text-sm font-bold transition-colors">
+                ← Back to Login
+              </button>
             </div>
-
-            <button
-              type="submit"
-              id="super-admin-login-btn"
-              disabled={loading || !!lockoutMsg}
-              className="w-full h-14 text-white font-black rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 mt-2"
-              style={{ background: "linear-gradient(135deg, #d97706, #92400e)", boxShadow: "0 10px 40px rgba(180,83,9,0.3)" }}
-            >
-              {loading
-                ? <Loader2 className="h-5 w-5 animate-spin" />
-                : <><span>Access Admin Portal</span><ChevronRight className="h-5 w-5" /></>}
-            </button>
-          </form>
+          )}
 
           <div className="mt-8 pt-6 border-t border-white/5">
             <div className="bg-amber-400/5 border border-amber-400/10 rounded-xl p-3 text-center">

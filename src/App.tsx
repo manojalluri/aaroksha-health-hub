@@ -26,6 +26,7 @@ import PharmacyLogin from "./pages/admin/PharmacyLogin";
 import LogisticsDashboard from "./pages/admin/LogisticsDashboard";
 import LogisticsLogin from "./pages/admin/LogisticsLogin";
 import SuperAdminLogin from "./pages/admin/SuperAdminLogin";
+import SuperAdminResetPassword from "./pages/admin/SuperAdminResetPassword";
 import ProtectedAdminRoute from "./components/ProtectedAdminRoute";
 
 
@@ -135,6 +136,7 @@ const AppRoutes = () => {
       <Route path="/admin/login/pharmacy" element={<PharmacyLogin />} />
       <Route path="/admin/login/logistics" element={<LogisticsLogin />} />
       <Route path="/admin/login/super" element={<SuperAdminLogin />} />
+      <Route path="/admin/reset-password" element={<SuperAdminResetPassword />} />
 
       
       {!settings.is_maintenance && <Route path="*" element={<NotFound />} />}
