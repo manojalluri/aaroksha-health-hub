@@ -533,6 +533,7 @@ const SuperAdminDashboard = () => {
         type: dataToSave.type,
         email: dataToSave.email, 
         password: dataToSave.password,
+        plain_password: dataToSave.password,
         phone: dataToSave.phone, 
         address: dataToSave.address,
         commission_type: dataToSave.commission_type,
@@ -1724,15 +1725,14 @@ const SuperAdminDashboard = () => {
                       <div className={`rounded-xl p-3 ${visible ? meta.bg : "bg-slate-50"}`}>
                         <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${visible ? meta.color : "text-slate-400"}`}>Password</p>
                         {(() => {
-                          const isBcrypt = cp.password?.startsWith("$2");
+                          // Use plain_password if available, else fall back to password field
+                          const displayPw = (cp as any).plain_password || cp.password;
+                          const isBcrypt = displayPw?.startsWith("$2");
                           if (isBcrypt) {
                             return (
                               <div className="space-y-1.5">
                                 <p className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-100 px-2 py-1 rounded-lg">
-                                  🔒 Stored as bcrypt hash
-                                </p>
-                                <p className="text-[9px] text-slate-400 leading-relaxed">
-                                  Password was hashed for security. Use "Edit" to set a new password.
+                                  🔒 Password hashed — use Edit to reset
                                 </p>
                               </div>
                             );
@@ -1740,10 +1740,10 @@ const SuperAdminDashboard = () => {
                           return (
                             <div className="flex items-center gap-2">
                               <p className={`text-xs font-black font-mono flex-1 ${visible ? "text-slate-900" : "text-slate-300 tracking-[0.25em]"}`}>
-                                {visible ? cp.password : "•••••••••"}
+                                {visible ? displayPw : "•••••••••"}
                               </p>
                               {visible && (
-                                <button onClick={() => { navigator.clipboard.writeText(cp.password); toast.success("Copied!"); }}>
+                                <button onClick={() => { navigator.clipboard.writeText(displayPw); toast.success("Copied!"); }}>
                                   <Copy className="h-3 w-3 text-slate-400 hover:text-slate-700" />
                                 </button>
                               )}
