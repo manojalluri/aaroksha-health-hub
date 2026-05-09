@@ -11,6 +11,7 @@ import { supabase } from "@/lib/supabase";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { getSettings } from "@/lib/settingsSync";
+import SEO from "@/components/SEO";
 
 interface LabTest {
   id: string;
@@ -303,6 +304,11 @@ const LabTestsPage = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
+      <SEO 
+        title="Lab Tests & Health Packages"
+        description="Book affordable blood tests and health checkup packages online in Bhimavaram. Home sample collection available across West Godavari."
+        keywords={["lab tests Bhimavaram", "blood test booking", "health packages", "home sample collection AP", "diagnostic center Bhimavaram"]}
+      />
 
       {/* ── Header ── */}
       <header className="bg-white border-b border-slate-100 sticky top-0 z-40">

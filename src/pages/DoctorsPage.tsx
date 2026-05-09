@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import SEO from "@/components/SEO";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { Star, Search, Loader2, Clock, ChevronLeft, Home, Calendar, FlaskConical, Pill, User, Languages, Building2 } from "lucide-react";
 
@@ -97,6 +98,11 @@ const DoctorsPage = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
+      <SEO 
+        title="Best Doctors in Bhimavaram - Online OP Booking"
+        description="Book appointments with the best specialists and doctors in Bhimavaram and West Godavari. Skip the queue and consult top healthcare professionals online."
+        keywords={["doctor booking Bhimavaram", "OP appointment online", "best doctors West Godavari", "specialist consultation AP"]}
+      />
 
       {/* ── Mobile Header ── */}
       <header className="bg-white border-b border-slate-100 sticky top-0 z-40">

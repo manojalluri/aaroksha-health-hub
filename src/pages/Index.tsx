@@ -10,6 +10,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Banner, getBanners, syncBannersFromSupabase } from "@/lib/bannersSync";
 import { getLocalDoctors } from "@/lib/doctorsSync";
 import { getSettings, syncSettingsFromSupabase } from "@/lib/settingsSync";
+import SEO from "@/components/SEO";
+import { SEO_CONFIG } from "@/utils/seoConfig";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -160,6 +162,26 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-slate-50">
+      <SEO 
+        title="Bhimavaram's First Digital Healthcare Platform"
+        description="Book doctor appointments, order medicines online, and schedule lab tests in Bhimavaram and West Godavari. Aaroksha is Andhra Pradesh's next-gen healthcare hub."
+        keywords={["healthcare Bhimavaram", "digital health West Godavari", "medicine delivery", "lab test booking"]}
+        schema={{
+          "@context": "https://schema.org",
+          "@type": "MedicalOrganization",
+          "name": SEO_CONFIG.brandName,
+          "alternateName": "Aaroksha Health Hub",
+          "url": SEO_CONFIG.websiteUrl,
+          "logo": `${SEO_CONFIG.websiteUrl}/logo.png`,
+          "address": {
+            "@type": "PostalAddress",
+            "addressLocality": SEO_CONFIG.location.city,
+            "addressRegion": SEO_CONFIG.location.state,
+            "postalCode": "534201",
+            "addressCountry": "IN"
+          }
+        }}
+      />
 
       {/* ─────────────────────────────────────────
           DESKTOP TOP NAV (md and above)
