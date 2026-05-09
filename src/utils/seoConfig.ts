@@ -17,8 +17,8 @@ export const SEO_CONFIG = {
       longitude: "81.5212"
     }
   },
-  tagline: "Bhimavaram's First Digital Healthcare Platform",
-  description: "Aaroksha is Bhimavaram's first integrated digital healthcare platform. Order medicines, book lab tests, and consult doctors online in West Godavari. Affordable healthcare services at your fingertips.",
+  tagline: "Bhimavaram's Best Digital Healthcare Platform",
+  description: "Aaroksha is Bhimavaram's best integrated digital healthcare platform. Order medicines, book lab tests, and consult doctors online in West Godavari. Top-rated affordable healthcare at your doorstep.",
   keywords: [
     "medicine delivery Bhimavaram",
     "online pharmacy Bhimavaram",

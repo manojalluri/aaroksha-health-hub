@@ -163,8 +163,8 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-slate-50">
       <SEO 
-        title="Bhimavaram's First Digital Healthcare Platform"
-        description="Book doctor appointments, order medicines online, and schedule lab tests in Bhimavaram and West Godavari. Aaroksha is Andhra Pradesh's next-gen healthcare hub."
+        title="Bhimavaram's #1 Digital Healthcare Website"
+        description="Book doctor appointments, order medicines online, and schedule lab tests in Bhimavaram. Aaroksha is West Godavari's most trusted healthcare platform."
         keywords={["healthcare Bhimavaram", "digital health West Godavari", "medicine delivery", "lab test booking"]}
         schema={{
           "@context": "https://schema.org",
