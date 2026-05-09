@@ -1723,16 +1723,35 @@ const SuperAdminDashboard = () => {
                       </div>
                       <div className={`rounded-xl p-3 ${visible ? meta.bg : "bg-slate-50"}`}>
                         <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${visible ? meta.color : "text-slate-400"}`}>Password</p>
-                        <div className="flex items-center gap-2">
-                          <p className={`text-xs font-black font-mono ${visible ? "text-slate-900" : "text-slate-300 tracking-[0.25em]"}`}>
-                            {visible ? cp.password : "•••••••••"}
-                          </p>
-                          {visible && (
-                            <button onClick={() => { navigator.clipboard.writeText(cp.password); toast.success("Copied!"); }}
-                              className="ml-auto"><Copy className="h-3 w-3 text-slate-400 hover:text-slate-700" /></button>
-                          )}
-                        </div>
+                        {(() => {
+                          const isBcrypt = cp.password?.startsWith("$2");
+                          if (isBcrypt) {
+                            return (
+                              <div className="space-y-1.5">
+                                <p className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-100 px-2 py-1 rounded-lg">
+                                  🔒 Stored as bcrypt hash
+                                </p>
+                                <p className="text-[9px] text-slate-400 leading-relaxed">
+                                  Password was hashed for security. Use "Edit" to set a new password.
+                                </p>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="flex items-center gap-2">
+                              <p className={`text-xs font-black font-mono flex-1 ${visible ? "text-slate-900" : "text-slate-300 tracking-[0.25em]"}`}>
+                                {visible ? cp.password : "•••••••••"}
+                              </p>
+                              {visible && (
+                                <button onClick={() => { navigator.clipboard.writeText(cp.password); toast.success("Copied!"); }}>
+                                  <Copy className="h-3 w-3 text-slate-400 hover:text-slate-700" />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
+
                       <div className="bg-slate-50 rounded-xl p-3">
                         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Partner ID</p>
                         <p className="text-[10px] font-mono text-slate-500 truncate">{cp.partner_id}</p>
