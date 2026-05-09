@@ -432,7 +432,8 @@ const HospitalDashboard = () => {
 
       if (updateError) throw updateError;
       
-      setPartner((prev: any) => ({ ...prev, logo_url: publicUrl }));
+      const bustedUrl = `${publicUrl}?t=${Date.now()}`;
+      setPartner((prev: any) => ({ ...prev, logo_url: bustedUrl }));
       toast.success("Hospital logo updated!");
     } catch (err: any) {
       console.error(err);
