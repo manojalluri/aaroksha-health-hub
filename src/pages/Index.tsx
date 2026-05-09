@@ -193,7 +193,7 @@ const Index = () => {
               className="font-black tracking-tight leading-none uppercase"
               style={{
                 fontSize: "26px",
-                background: "linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #0ea5e9 100%)",
+                background: "linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)",
                 WebkitBackgroundClip: "text",
                 WebkitTextFillColor: "transparent",
                 backgroundClip: "text",
@@ -245,7 +245,7 @@ const Index = () => {
                 className="font-black tracking-tight leading-none"
                 style={{
                   fontSize: "22px",
-                  background: "linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #0ea5e9 100%)",
+                  background: "linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)",
                   WebkitBackgroundClip: "text",
                   WebkitTextFillColor: "transparent",
                   backgroundClip: "text",
