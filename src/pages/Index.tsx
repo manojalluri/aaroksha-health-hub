@@ -65,10 +65,10 @@ const Index = () => {
 
   useEffect(() => {
     const handleUpdate = () => {
-      supabase.from("doctors").select("*").limit(4).then(({ data }) => {
+      supabase.from("doctors").select("*").then(({ data }) => {
         const local = getLocalDoctors() || [];
         if (!data || data.length === 0) {
-          setDoctors(local.slice(0, 4));
+          setDoctors(local);
           return;
         }
         
@@ -76,8 +76,8 @@ const Index = () => {
         const dbIds = new Set(data.map(d => d.id));
         const missingLocal = local.filter(d => !dbIds.has(d.id) && String(d.id).startsWith("local-"));
         
-        setDoctors([...data, ...missingLocal].slice(0, 4));
-      }).catch(() => setDoctors(getLocalDoctors().slice(0, 4)));
+        setDoctors([...data, ...missingLocal]);
+      }).catch(() => setDoctors(getLocalDoctors()));
     };
     
     handleUpdate();

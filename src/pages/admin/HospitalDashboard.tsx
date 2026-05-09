@@ -425,14 +425,15 @@ const HospitalDashboard = () => {
         .from('doctor_profiles')
         .getPublicUrl(fileName);
 
+      const bustedUrl = `${publicUrl}?t=${Date.now()}`;
+
       const { error: updateError } = await supabase
         .from("partners")
-        .update({ logo_url: publicUrl })
+        .update({ logo_url: bustedUrl })
         .eq("partner_id", partnerId);
 
       if (updateError) throw updateError;
       
-      const bustedUrl = `${publicUrl}?t=${Date.now()}`;
       setPartner((prev: any) => ({ ...prev, logo_url: bustedUrl }));
       toast.success("Hospital logo updated!");
     } catch (err: any) {
