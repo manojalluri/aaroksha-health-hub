@@ -100,7 +100,7 @@ const LabTestsPage = () => {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showCart, setShowCart] = useState(false);
-  const [activeTab, setActiveTab] = useState<"tests" | "combos">("combos");
+  const [activeTab, setActiveTab] = useState<"tests" | "combos">("tests");
   const [step, setStep] = useState<"browse" | "details" | "checkout" | "confirmed">("browse");
   const [patient, setPatient] = useState<PatientDetails>({ name: "", age: "", gender: "", phone: "", email: "", address: "" });
   const [selectedDate, setSelectedDate] = useState("");
@@ -387,7 +387,7 @@ const LabTestsPage = () => {
 
           {/* ── Tab switcher ── */}
           <div className="flex bg-slate-100 p-1 rounded-2xl mx-4 mb-4">
-            {(["combos", "tests"] as const).map(tab => (
+            {(["tests", "combos"] as const).map(tab => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -552,24 +552,7 @@ const LabTestsPage = () => {
         </main>
       )}
 
-      {/* Sticky Cart Bar — visible on browse when cart has items */}
-      {step === "browse" && cart.length > 0 && (
-        <div className="fixed bottom-16 left-0 right-0 z-40 px-4 pb-2">
-          <button
-            onClick={() => setStep("details")}
-            className="w-full rounded-2xl bg-blue-600 py-4 flex items-center justify-between px-5 shadow-2xl shadow-blue-300/50 active:scale-[0.99] transition-all"
-          >
-            <div className="flex items-center gap-2">
-              <span className="h-6 w-6 rounded-full bg-white/20 text-white text-xs font-black flex items-center justify-center">{cart.length}</span>
-              <span className="text-white font-black text-sm">{cart.length} test{cart.length > 1 ? "s" : ""} selected</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-white font-black text-sm">&#8377;{total}</span>
-              <ChevronRight className="h-4 w-4 text-white/80" />
-            </div>
-          </button>
-        </div>
-      )}
+
 
       {/* DETAILS step */}
       {step === "details" && (
