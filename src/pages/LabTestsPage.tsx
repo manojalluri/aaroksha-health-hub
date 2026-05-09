@@ -21,6 +21,77 @@ interface LabTest {
   turnaround: string;
 }
 
+interface LabCombo {
+  id: string;
+  name: string;
+  description: string;
+  tests: string[];          // test names included
+  test_ids: string[];       // lab_tests.id references
+  original_price: number;
+  combo_price: number;
+  tag?: string;             // e.g. "Best Seller", "Popular"
+  color: string;            // tailwind/hex accent
+}
+
+// Static combos shown if Supabase table doesn't exist yet
+const STATIC_COMBOS: LabCombo[] = [
+  {
+    id: "c1",
+    name: "Aaroksha Basic Health",
+    description: "Essential screening for everyday wellness",
+    tests: ["Complete Blood Count (CBC)", "Blood Sugar Fasting", "Urine Routine"],
+    test_ids: [],
+    original_price: 700,
+    combo_price: 499,
+    tag: "Best Value",
+    color: "#2563eb",
+  },
+  {
+    id: "c2",
+    name: "Diabetes Care Pack",
+    description: "Monitor and manage your blood sugar health",
+    tests: ["Blood Sugar Fasting", "HbA1c", "Kidney Function Test (KFT)"],
+    test_ids: [],
+    original_price: 1150,
+    combo_price: 799,
+    tag: "Popular",
+    color: "#7c3aed",
+  },
+  {
+    id: "c3",
+    name: "Heart & Cholesterol",
+    description: "Complete cardiac risk assessment",
+    tests: ["Lipid Profile", "Complete Blood Count (CBC)", "Blood Sugar Fasting"],
+    test_ids: [],
+    original_price: 1000,
+    combo_price: 699,
+    tag: "Recommended",
+    color: "#dc2626",
+  },
+  {
+    id: "c4",
+    name: "Thyroid & Vitamin",
+    description: "Check hormones and vital nutrient levels",
+    tests: ["Thyroid Profile (T3, T4, TSH)", "Vitamin D Test"],
+    test_ids: [],
+    original_price: 1450,
+    combo_price: 999,
+    tag: "Women's Health",
+    color: "#be185d",
+  },
+  {
+    id: "c5",
+    name: "Full Body Wellness",
+    description: "Comprehensive head-to-toe health checkup",
+    tests: ["Complete Blood Count (CBC)", "Lipid Profile", "Liver Function Test (LFT)", "Kidney Function Test (KFT)", "Thyroid Profile (T3, T4, TSH)", "Vitamin D Test"],
+    test_ids: [],
+    original_price: 3450,
+    combo_price: 1999,
+    tag: "🔥 Best Seller",
+    color: "#059669",
+  },
+];
+
 const LabTestsPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -29,6 +100,7 @@ const LabTestsPage = () => {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showCart, setShowCart] = useState(false);
+  const [activeTab, setActiveTab] = useState<"tests" | "combos">("combos");
   const [step, setStep] = useState<"browse" | "details" | "checkout" | "confirmed">("browse");
   const [patient, setPatient] = useState<PatientDetails>({ name: "", age: "", gender: "", phone: "", email: "", address: "" });
   const [selectedDate, setSelectedDate] = useState("");
@@ -70,6 +142,46 @@ const LabTestsPage = () => {
       return (data || []) as LabTest[];
     },
   });
+
+  const { data: combos = STATIC_COMBOS } = useQuery<LabCombo[]>({
+    queryKey: ["lab-combos"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("lab_combos").select("*");
+      if (error || !data?.length) return STATIC_COMBOS;
+      return data as LabCombo[];
+    },
+  });
+
+  // Add all tests of a combo to cart
+  const addComboToCart = (combo: LabCombo) => {
+    // Map combo test names → actual LabTest objects
+    const comboTests: LabTest[] = combo.tests.map((testName, i) => {
+      const found = labTests.find(t =>
+        t.name.toLowerCase().includes(testName.toLowerCase()) ||
+        testName.toLowerCase().includes(t.name.toLowerCase())
+      );
+      return found ?? {
+        id: `${combo.id}_${i}`,
+        name: testName,
+        category: "Package",
+        price: 0,
+        description: "",
+        turnaround: "24 hours",
+      };
+    });
+
+    let added = 0;
+    const newCart = [...cart];
+    for (const test of comboTests) {
+      if (!newCart.find(c => c.test.id === test.id)) {
+        newCart.push({ test, quantity: 1 });
+        added++;
+      }
+    }
+    setCart(newCart);
+    if (added > 0) toast.success(`${combo.name} — ${added} tests added to cart!`);
+    else toast.info("All tests from this combo are already in your cart");
+  };
 
   const { data: labPartner } = useQuery({
     queryKey: ["lab-partner-settings"],
@@ -271,31 +383,86 @@ const LabTestsPage = () => {
 
       {/* ════════ BROWSE ════════ */}
       {step === "browse" && (
-        <main className="flex-1 px-4 py-4 pb-32 space-y-3">
-          {/* Cart Panel */}
-          {showCart && cart.length > 0 && (
-            <div className="bg-white rounded-2xl border border-purple-100 shadow-lg overflow-hidden">
-              <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-                <p className="font-black text-slate-800 text-sm">Cart ({cart.length} tests)</p>
-                <p className="font-black text-purple-600">₹{total}</p>
-              </div>
-              <div className="divide-y divide-slate-50">
-                {cart.map((item) => (
-                  <div key={item.test.id} className="flex items-center justify-between px-4 py-3">
-                    <div>
-                      <p className="text-sm font-bold text-slate-700 truncate">{item.test.name}</p>
-                      <p className="text-[10px] font-medium text-slate-400">{item.test.turnaround}</p>
+        <main className="flex-1 py-4 pb-32">
+
+          {/* ── Tab switcher ── */}
+          <div className="flex bg-slate-100 p-1 rounded-2xl mx-4 mb-4">
+            {(["combos", "tests"] as const).map(tab => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`flex-1 py-2.5 text-xs font-black rounded-xl transition-all capitalize ${
+                  activeTab === tab ? "bg-white text-blue-600 shadow-sm" : "text-slate-400"
+                }`}
+              >
+                {tab === "combos" ? "🎁 Combo Packs" : "🔬 Individual Tests"}
+              </button>
+            ))}
+          </div>
+
+          {/* ══ COMBOS TAB ══ */}
+          {activeTab === "combos" && (
+            <div className="space-y-3 px-4">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                Save more with curated health packages
+              </p>
+              {combos.map(combo => {
+                const saving = combo.original_price - combo.combo_price;
+                const savePct = Math.round((saving / combo.original_price) * 100);
+                return (
+                  <div
+                    key={combo.id}
+                    className="rounded-2xl overflow-hidden border border-slate-100 shadow-sm bg-white"
+                  >
+                    {/* Accent header */}
+                    <div className="px-4 pt-3.5 pb-3" style={{ background: `linear-gradient(135deg, ${combo.color}18, ${combo.color}08)`, borderBottom: `1.5px solid ${combo.color}20` }}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1">
+                          {combo.tag && (
+                            <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full text-white mb-1.5 inline-block" style={{ backgroundColor: combo.color }}>
+                              {combo.tag}
+                            </span>
+                          )}
+                          <h3 className="font-black text-slate-800 text-sm leading-tight">{combo.name}</h3>
+                          <p className="text-[11px] text-slate-400 font-medium mt-0.5">{combo.description}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-[10px] text-slate-400 line-through">₹{combo.original_price}</p>
+                          <p className="text-xl font-black" style={{ color: combo.color }}>₹{combo.combo_price}</p>
+                          <span className="text-[9px] font-black text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full">
+                            Save {savePct}%
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <p className="font-black text-slate-800 text-sm">₹{item.test.price}</p>
-                      <button onClick={() => removeFromCart(item.test.id)} className="h-7 w-7 rounded-lg bg-red-50 flex items-center justify-center">
-                        <Trash2 className="h-3.5 w-3.5 text-red-500" />
+
+                    {/* Tests list */}
+                    <div className="px-4 py-3">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Includes</p>
+                      <div className="flex flex-wrap gap-1.5 mb-3">
+                        {combo.tests.map(t => (
+                          <span key={t} className="text-[10px] font-bold text-slate-600 bg-slate-50 border border-slate-100 px-2 py-1 rounded-lg">
+                            ✓ {t}
+                          </span>
+                        ))}
+                      </div>
+                      <button
+                        onClick={() => addComboToCart(combo)}
+                        className="w-full py-3 rounded-xl text-sm font-black text-white transition-all active:scale-[0.98] shadow-md"
+                        style={{ backgroundColor: combo.color, boxShadow: `0 4px 12px ${combo.color}40` }}
+                      >
+                        Add Combo to Cart — ₹{combo.combo_price}
                       </button>
                     </div>
                   </div>
-                ))}
-              </div>
-              <div className="px-4 py-3 bg-slate-50">
+                );
+              })}
+            </div>
+          )}
+
+          {/* ══ INDIVIDUAL TESTS TAB ══ */}
+          {activeTab === "tests" && (
+            <div className="space-y-3 px-4">
                 <button
                   onClick={() => { setStep("details"); setShowCart(false); }}
                   className="w-full rounded-xl bg-blue-600 py-3 text-sm font-black text-white flex items-center justify-center gap-2 shadow-lg shadow-blue-200"
@@ -306,63 +473,80 @@ const LabTestsPage = () => {
             </div>
           )}
 
-          {isLoading ? (
-            <div className="flex flex-col items-center justify-center py-24 gap-3">
-              <Loader2 className="h-8 w-8 text-purple-600 animate-spin" />
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading tests...</p>
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center py-24 gap-3">
+                <Loader2 className="h-8 w-8 text-purple-600 animate-spin" />
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading tests...</p>
+              </div>
+            ) : (
+              filtered.map((test) => {
+                const inCart = cart.some((c) => c.test.id === test.id);
+                const cc = categoryColors[test.category] || { bg: "#e2e8f0", text: "#64748b" };
+                return (
+                  <div key={test.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <h3 className="font-black text-slate-800 text-sm leading-tight flex-1">{test.name}</h3>
+                      <span
+                        className="text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full shrink-0"
+                        style={{ backgroundColor: cc.bg, color: cc.text }}
+                      >
+                        {test.category}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 font-medium leading-relaxed mb-3 line-clamp-2">
+                      {test.description}
+                    </p>
+                    <div className="flex items-center gap-4 mb-3">
+                      <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
+                        <Clock className="h-3 w-3" /> {test.turnaround}
+                      </span>
+                      <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
+                        <TestTube className="h-3 w-3" /> Home collection
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-50">
+                      <p className="text-xl font-black text-slate-800">₹{test.price}</p>
+                      <button
+                        onClick={() => inCart ? removeFromCart(test.id) : addToCart(test)}
+                        className={`px-5 py-2 rounded-xl text-[11px] font-black transition-all active:scale-95 ${
+                          inCart ? "bg-red-50 text-red-500 border border-red-100" : "text-white shadow-md"
+                        }`}
+                        style={!inCart ? { backgroundColor: cc.text, boxShadow: `0 4px 10px ${cc.text}40` } : {}}
+                      >
+                        {inCart ? "✕ Remove" : "+ Add"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
             </div>
-          ) : (
-            filtered.map((test) => {
-              const inCart = cart.some((c) => c.test.id === test.id);
-              const cc = categoryColors[test.category] || { bg: "#e2e8f0", text: "#64748b" };
-              return (
-                <div key={test.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <h3 className="font-black text-slate-800 text-sm leading-tight flex-1">{test.name}</h3>
-                    <span
-                      className="text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full shrink-0"
-                      style={{ backgroundColor: cc.bg, color: cc.text }}
-                    >
-                      {test.category}
-                    </span>
-                  </div>
-
-                  <p className="text-[11px] text-slate-400 font-medium leading-relaxed mb-3 line-clamp-2">
-                    {test.description}
-                  </p>
-
-                  <div className="flex items-center gap-4 mb-3">
-                    <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
-                      <Clock className="h-3 w-3" /> {test.turnaround}
-                    </span>
-                    <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
-                      <TestTube className="h-3 w-3" /> Home collection
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-3 border-t border-slate-50">
-                    <p className="text-xl font-black text-slate-800">₹{test.price}</p>
-                    <button
-                      onClick={() => inCart ? removeFromCart(test.id) : addToCart(test)}
-                      className={`px-5 py-2 rounded-xl text-[11px] font-black transition-all active:scale-95 ${
-                        inCart
-                          ? "bg-red-50 text-red-500 border border-red-100"
-                          : "text-white shadow-md"
-                      }`}
-                      style={!inCart ? { backgroundColor: cc.text, boxShadow: `0 4px 10px ${cc.text}40` } : {}}
-                    >
-                      {inCart ? "✕ Remove" : "+ Add"}
-                    </button>
-                  </div>
-                </div>
-              );
-            })
           )}
         </main>
       )}
 
-      {/* ════════ DETAILS ════════ */}
+      {/* Sticky Cart Bar — visible on browse when cart has items */}
+      {step === "browse" && cart.length > 0 && (
+        <div className="fixed bottom-16 left-0 right-0 z-40 px-4 pb-2">
+          <button
+            onClick={() => setStep("details")}
+            className="w-full rounded-2xl bg-blue-600 py-4 flex items-center justify-between px-5 shadow-2xl shadow-blue-300/50 active:scale-[0.99] transition-all"
+          >
+            <div className="flex items-center gap-2">
+              <span className="h-6 w-6 rounded-full bg-white/20 text-white text-xs font-black flex items-center justify-center">{cart.length}</span>
+              <span className="text-white font-black text-sm">{cart.length} test{cart.length > 1 ? "s" : ""} selected</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-white font-black text-sm">&#8377;{total}</span>
+              <ChevronRight className="h-4 w-4 text-white/80" />
+            </div>
+          </button>
+        </div>
+      )}
+
+      {/* DETAILS step */}
       {step === "details" && (
+
         <main className="flex-1 px-4 py-4 pb-28 space-y-4">
           {/* Patient Info */}
           <div className="bg-white rounded-2xl border border-slate-100 p-4">
