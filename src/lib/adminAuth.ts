@@ -196,7 +196,7 @@ export const authenticatePartner = async (
 ): Promise<{ id: string; partner_id: string; name: string } | null> => {
   const cleanEmail = email.toLowerCase().trim();
   try {
-    // Preferred: RPC with server-side bcrypt check
+    // ── 1. Try RPC with server-side bcrypt check (preferred) ──
     const { data: rpcData, error: rpcErr } = await supabase.rpc(
       "authenticate_partner",
       { p_email: cleanEmail, p_password: password, p_type: type }
@@ -205,22 +205,32 @@ export const authenticatePartner = async (
       return rpcData[0] as { id: string; partner_id: string; name: string };
     }
 
-    // Transitional fallback — replace after hashing all partner passwords
-    const { data: partner, error } = await supabase
+    // ── 2. Fetch the partner row regardless of password storage format ──
+    const { data: partner, error: fetchErr } = await supabase
       .from("partners")
-      .select("id, partner_id, name")
-      .eq("email",    cleanEmail)
-      .eq("password", password)
-      .eq("type",     type)
-      .eq("status",   "active")
+      .select("id, partner_id, name, password, plain_password")
+      .eq("email",  cleanEmail)
+      .eq("type",   type)
+      .eq("status", "active")
       .maybeSingle();
 
-    if (error || !partner) return null;
-    return partner as { id: string; partner_id: string; name: string };
+    if (fetchErr || !partner) return null;
+
+    // Check plain_password first (always readable), then fallback to password field
+    const storedPlain = (partner as any).plain_password;
+    const storedPw    = (partner as any).password;
+
+    const plainMatch = storedPlain && storedPlain === password;
+    const pwMatch    = storedPw && !storedPw.startsWith("$2") && storedPw === password;
+
+    if (!plainMatch && !pwMatch) return null;
+
+    return { id: partner.id, partner_id: partner.partner_id, name: partner.name };
   } catch {
     return null;
   }
 };
+
 
 /** Create a DB-backed session token for an authenticated partner. */
 export const createPartnerSession = async (
