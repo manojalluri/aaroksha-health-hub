@@ -2,4 +2,4 @@ User-agent: *
 Allow: /
 
 # Sitemaps
-Sitemap: https://aaroksha.com/sitemap.xml
+Sitemap: https://www.aaroksha.in/sitemap.xml

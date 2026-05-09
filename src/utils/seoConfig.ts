@@ -5,7 +5,7 @@
 
 export const SEO_CONFIG = {
   brandName: "Aaroksha",
-  websiteUrl: "https://aaroksha.com", // Replace with actual domain when ready
+  websiteUrl: "https://www.aaroksha.in", 
   location: {
     city: "Bhimavaram",
     district: "West Godavari",
