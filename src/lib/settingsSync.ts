@@ -76,22 +76,10 @@ export const saveSettingsLocally = (settings: PlatformSettings) => {
 
 export const saveSettingsToSupabase = async (settings: PlatformSettings) => {
   try {
-    // 1. Fetch the existing record to get the correct ID (could be 'global', 1, or a UUID)
-    const { data: existing, error: fetchError } = await supabase
-      .from("platform_settings")
-      .select("id")
-      .limit(1)
-      .maybeSingle();
-
-    if (fetchError) throw fetchError;
-
-    const targetId = existing?.id || 'global';
-
-    // 2. Upsert with the detected ID
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("platform_settings")
       .upsert({ 
-        id: targetId, 
+        id: 'global', 
         platform_name: settings.platform_name,
         support_email: settings.support_email,
         support_phone: settings.support_phone,
@@ -114,15 +102,21 @@ export const saveSettingsToSupabase = async (settings: PlatformSettings) => {
         upi: settings.upi,
         cod: settings.cod,
         upi_id: settings.upi_id || ""
-      });
+      })
+      .select();
     
-    if (!error) {
-      saveSettingsLocally(settings);
-      return { error: null };
-    } else {
+    if (error) {
       console.error("Supabase Settings Sync Error:", error);
       return { error };
     }
+    
+    if (!data || data.length === 0) {
+      console.error("Supabase Settings Sync Warning: No rows were updated. Check RLS policies.");
+      return { error: new Error("Permission denied or record not found. Please check database RLS policies.") };
+    }
+    
+    saveSettingsLocally(settings);
+    return { error: null };
   } catch (err: any) {
     console.error("Settings Save Failed:", err);
     return { error: err };
@@ -134,10 +128,11 @@ export const syncSettingsFromSupabase = async () => {
     const { data, error } = await supabase
       .from("platform_settings")
       .select("*")
-      .limit(1)
+      .eq("id", "global")
       .maybeSingle();
     
     if (data && !error) {
+      console.log('[Aaroksha Sync] Raw data from Supabase:', data);
       const local = getSettings();
       const mapped: PlatformSettings = {
         ...local,
@@ -178,16 +173,30 @@ export const useSettings = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Initial fetch
+    console.log('[Aaroksha Sync] Initializing settings sync...');
     const fetchSettings = async () => {
-      const data = await syncSettingsFromSupabase();
-      if (data) setSettings(data);
-      setLoading(false);
+      try {
+        const data = await syncSettingsFromSupabase();
+        if (data) {
+          console.log('[Aaroksha Sync] Settings synced successfully:', data);
+          setSettings(data);
+        } else {
+          console.warn('[Aaroksha Sync] No data returned from Supabase, using defaults.');
+        }
+      } catch (err) {
+        console.error('[Aaroksha Sync] Sync failed:', err);
+      } finally {
+        setLoading(false);
+      }
     };
 
     fetchSettings();
 
+    // Fallback Polling (every 30s) in case realtime fails
+    const pollInterval = setInterval(fetchSettings, 30000);
+
     // Subscribe to realtime changes
+    console.log('[Aaroksha Sync] Subscribing to realtime platform_settings...');
     const subscription = supabase
       .channel('platform_settings_changes')
       .on(
@@ -197,15 +206,21 @@ export const useSettings = () => {
           schema: 'public',
           table: 'platform_settings'
         },
-        async () => {
-          console.log('Settings changed realtime, refetching...');
+        async (payload) => {
+          console.log('[Aaroksha Sync] Realtime change detected:', payload);
           const data = await syncSettingsFromSupabase();
-          if (data) setSettings(data);
+          if (data) {
+            console.log('[Aaroksha Sync] Realtime data applied:', data);
+            setSettings(data);
+          }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('[Aaroksha Sync] Realtime status:', status);
+      });
 
     return () => {
+      clearInterval(pollInterval);
       supabase.removeChannel(subscription);
     };
   }, []);
