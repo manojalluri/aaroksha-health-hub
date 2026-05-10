@@ -699,11 +699,11 @@ const SuperAdminDashboard = () => {
 
   // Delivery orders = prescriptions + lab bookings for logistics management
   const deliveryOrders = [
-    ...prescriptions.filter(p => ["dispatched", "collected", "completed", "reviewed"].includes(p.status)).map(p => ({ ...p, type: 'pharmacy' as const })),
+    ...prescriptions.filter(p => ["dispatched", "collected", "completed", "reviewed", "paid"].includes(p.status)).map(p => ({ ...p, type: 'pharmacy' as const })),
     ...labBookings.filter(b => ["confirmed", "collected", "processing", "completed"].includes(b.status)).map(b => ({ ...b, type: 'lab' as const }))
   ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   const totalToDeliver   = deliveryOrders.length;
-  const pendingDelivery  = deliveryOrders.filter(p => p.status === "reviewed" || p.status === "dispatched" || p.status === "collected").length;
+  const pendingDelivery  = deliveryOrders.filter(p => ["reviewed", "dispatched", "collected", "paid"].includes(p.status)).length;
   const delivered        = deliveryOrders.filter(p => p.status === "completed").length;
   const unassigned       = deliveryOrders.filter(p => !(p as any).logistics_partner_id).length;
   const assignedOrders   = deliveryOrders.filter(p => !!(p as any).logistics_partner_id).length;
@@ -2444,7 +2444,7 @@ const SuperAdminDashboard = () => {
                   {deliveryOrders
                     .filter(o => {
                       if (logisticsFilter === "unassigned") return !(o as any).logistics_partner_id;
-                      if (logisticsFilter === "dispatched") return ["reviewed", "dispatched", "collected"].includes(o.status);
+                      if (logisticsFilter === "dispatched") return ["reviewed", "dispatched", "collected", "paid"].includes(o.status);
                       if (logisticsFilter === "completed")  return o.status === "completed";
                       return true;
                     })
@@ -2452,6 +2452,7 @@ const SuperAdminDashboard = () => {
                       const meds = Array.isArray(order.medicines) ? order.medicines : [];
                       const assignedPartner = logisticPartners.find(p => p.partner_id === (order as any).logistics_partner_id);
                       const statusCfg: Record<string, { cls: string; dot: string; label: string }> = {
+                        paid:       { cls: "bg-purple-50 text-purple-700",  dot: "bg-purple-500",  label: "Paid - Awaiting Dispatch" },
                         reviewed:   { cls: "bg-blue-50 text-blue-700",    dot: "bg-blue-500",   label: "Awaiting Dispatch" },
                         dispatched: { cls: "bg-orange-50 text-orange-700",  dot: "bg-orange-500",  label: "Ready for Pickup" },
                         collected:  { cls: "bg-indigo-50 text-indigo-700",  dot: "bg-indigo-500",  label: "Out for Delivery" },
