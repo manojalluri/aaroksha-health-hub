@@ -453,7 +453,7 @@ const PrescriptionPage = () => {
                           <div className="flex justify-between items-center mb-2">
                              <span className="text-xs font-bold text-slate-500">Bill Summary</span>
                              <div className="text-right">
-                               <p className="text-[9px] font-bold text-slate-400 uppercase">Paid via PhonePe</p>
+                               <p className="text-[9px] font-bold text-slate-400 uppercase">Payment Confirmed</p>
                              </div>
                           </div>
                           <div className="flex justify-between items-center">
@@ -822,9 +822,9 @@ const PrescriptionPage = () => {
 
                 if (updateError) throw updateError;
 
-                // Handle payment handoff
-                toast.loading("Initiating secure payment via PhonePe...", { duration: 2500 });
-                await new Promise(r => setTimeout(r, 2500));
+                // Handle payment simulation
+                toast.loading("Processing your order...", { duration: 1500 });
+                await new Promise(r => setTimeout(r, 1500));
 
                 toast.success("Order placed successfully! Secure ID: " + transactionId);
                 setDeliveryCode(code);
