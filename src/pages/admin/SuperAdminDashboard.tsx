@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Banner, getBanners, saveBanners } from "@/lib/bannersSync";
-import { getSettings, saveSettingsLocally, saveSettingsToSupabase } from "@/lib/settingsSync";
+import { getSettings, saveSettingsLocally, saveSettingsToSupabase, syncSettingsFromSupabase } from "@/lib/settingsSync";
 import { useNavigate } from "react-router-dom";
 import { verifySuperAdminSession, clearAdminSession } from "@/lib/adminAuth";
 
@@ -252,6 +252,7 @@ const SuperAdminDashboard = () => {
   const [toggles, setToggles] = useState(getSettings());
   
   useEffect(() => {
+    syncSettingsFromSupabase().then(s => setToggles(s));
     const fn = () => setToggles(getSettings());
     window.addEventListener("settings_updated", fn);
     return () => window.removeEventListener("settings_updated", fn);
@@ -458,10 +459,26 @@ const SuperAdminDashboard = () => {
       })
       .subscribe();
 
+    const partnersChannel = supabase
+      .channel('admin-partners-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'partners' }, () => {
+        qc.invalidateQueries({ queryKey: ["admin-partners"] });
+      })
+      .subscribe();
+
+    const settingsChannel = supabase
+      .channel('admin-settings-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'platform_settings' }, () => {
+        syncSettingsFromSupabase().then(s => setToggles(s));
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(rxChannel);
       supabase.removeChannel(labChannel);
       supabase.removeChannel(apptChannel);
+      supabase.removeChannel(partnersChannel);
+      supabase.removeChannel(settingsChannel);
     };
   }, [qc]);
 
@@ -2322,10 +2339,13 @@ const SuperAdminDashboard = () => {
                 <div className="mt-8 flex gap-3 border-t border-slate-50 pt-6">
                   <button onClick={async () => { 
                     const { error } = await saveSettingsToSupabase(toggles); 
-                    if (!error) toast.success("Platform settings synced successfully!");
+                    if (!error) {
+                      toast.success("Platform settings synced successfully!");
+                      syncSettingsFromSupabase().then(s => setToggles(s));
+                    }
                     else toast.error("Failed to sync settings");
                   }} className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-lg shadow-blue-200 hover:bg-blue-700 transition-all active:scale-95 shadow-sm">Save All Changes</button>
-                  <button onClick={() => setToggles(getSettings())} className="flex items-center gap-2 bg-slate-100 text-slate-600 px-6 py-3 rounded-xl font-bold text-sm hover:bg-slate-200 transition-all">Discard</button>
+                  <button onClick={() => { syncSettingsFromSupabase().then(s => setToggles(s)); }} className="flex items-center gap-2 bg-slate-100 text-slate-600 px-6 py-3 rounded-xl font-bold text-sm hover:bg-slate-200 transition-all">Discard</button>
                 </div>
               </div>
             </div>
