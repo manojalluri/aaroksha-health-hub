@@ -737,11 +737,11 @@ const SuperAdminDashboard = () => {
 
   // Delivery orders = prescriptions + lab bookings for logistics management
   const deliveryOrders = [
-    ...filteredPrescriptions.filter(p => ["dispatched", "collected", "completed", "reviewed", "paid"].includes(p.status)).map(p => ({ ...p, type: 'pharmacy' as const })),
+    ...filteredPrescriptions.filter(p => ["dispatched", "collected", "completed", "reviewed"].includes(p.status)).map(p => ({ ...p, type: 'pharmacy' as const })),
     ...filteredLabBookings.filter(b => ["confirmed", "collected", "processing", "completed"].includes(b.status)).map(b => ({ ...b, type: 'lab' as const }))
   ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   const totalToDeliver   = deliveryOrders.length;
-  const pendingDelivery  = deliveryOrders.filter(p => ["reviewed", "dispatched", "collected", "paid"].includes(p.status)).length;
+  const pendingDelivery  = deliveryOrders.filter(p => ["reviewed", "dispatched", "collected"].includes(p.status)).length;
   const delivered        = deliveryOrders.filter(p => p.status === "completed").length;
   const unassigned       = deliveryOrders.filter(p => !(p as any).logistics_partner_id).length;
   const assignedOrders   = deliveryOrders.filter(p => !!(p as any).logistics_partner_id).length;
@@ -2512,13 +2512,19 @@ const SuperAdminDashboard = () => {
                   {deliveryOrders
                     .filter(o => {
                       if (logisticsFilter === "unassigned") return !(o as any).logistics_partner_id;
-                      if (logisticsFilter === "dispatched") return ["reviewed", "dispatched", "collected", "paid"].includes(o.status);
+                      if (logisticsFilter === "dispatched") return ["reviewed", "dispatched", "collected"].includes(o.status);
                       if (logisticsFilter === "completed")  return o.status === "completed";
                       return true;
                     })
                     .map(order => {
                       const meds = Array.isArray(order.medicines) ? order.medicines : [];
                       const assignedPartner = logisticPartners.find(p => p.partner_id === (order as any).logistics_partner_id);
+                      
+                      let computedStatus = order.status;
+                      if (order.status === "reviewed" && order.payment_status === "paid") {
+                        computedStatus = "paid"; // virtual status just for styling below
+                      }
+
                       const statusCfg: Record<string, { cls: string; dot: string; label: string }> = {
                         paid:       { cls: "bg-purple-50 text-purple-700",  dot: "bg-purple-500",  label: "Paid - Awaiting Dispatch" },
                         reviewed:   { cls: "bg-blue-50 text-blue-700",    dot: "bg-blue-500",   label: "Awaiting Dispatch" },
@@ -2526,7 +2532,7 @@ const SuperAdminDashboard = () => {
                         collected:  { cls: "bg-indigo-50 text-indigo-700",  dot: "bg-indigo-500",  label: "Out for Delivery" },
                         completed:  { cls: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-500", label: "Delivered" },
                       };
-                      const sc = statusCfg[order.status] || { cls: "bg-slate-50 text-slate-600", dot: "bg-slate-400", label: order.status };
+                      const sc = statusCfg[computedStatus] || { cls: "bg-slate-50 text-slate-600", dot: "bg-slate-400", label: order.status };
 
                       return (
                         <div key={order.id} className="px-6 py-4 hover:bg-slate-50/50 transition-colors">
@@ -2609,7 +2615,7 @@ const SuperAdminDashboard = () => {
                                   {assigningId === order.id && (
                                     <Loader2 className="h-4 w-4 text-indigo-400 animate-spin" />
                                   )}
-                                  {((order as any).type === "pharmacy" && order.status === "paid" && (order as any).logistics_partner_id) ? (
+                                  {((order as any).type === "pharmacy" && order.status === "reviewed" && order.payment_status === "paid" && (order as any).logistics_partner_id) ? (
                                     <button 
                                       onClick={() => handleDispatch(order.id, (order as any).type)}
                                       disabled={dispatchingId === order.id}

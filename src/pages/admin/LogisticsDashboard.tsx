@@ -145,7 +145,7 @@ const LogisticsDashboard = () => {
         .from("prescriptions")
         .select("*")
         .eq("logistics_partner_id", partner.partner_id)
-        .in("status", ["reviewed", "paid", "dispatched", "collected", "completed"])
+        .in("status", ["reviewed", "dispatched", "collected", "completed"])
         .order("created_at", { ascending: false });
       if (error) throw error;
       return (data || []).map(d => ({ ...d, type: 'prescription' })) as DeliveryOrder[];
@@ -487,11 +487,11 @@ const LogisticsDashboard = () => {
                        <TableCell>
                          <p className="text-sm font-medium text-slate-600 line-clamp-1 max-w-[200px]">{order.delivery_address}</p>
                        </TableCell>
-                       <TableCell>
-                         <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${statusStyle[order.status] || "bg-slate-100"}`}>
-                           {statusLabel[order.status] || order.status}
-                         </span>
-                       </TableCell>
+                        <TableCell>
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${statusStyle[order.status === "reviewed" && (order as any).payment_status === "paid" ? "paid" : order.status] || "bg-slate-100"}`}>
+                            {statusLabel[order.status === "reviewed" && (order as any).payment_status === "paid" ? "paid" : order.status] || order.status}
+                          </span>
+                        </TableCell>
                        <TableCell className="text-xs text-slate-400 font-medium">
                          {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                        </TableCell>
@@ -553,8 +553,8 @@ const LogisticsDashboard = () => {
                       <h4 className="font-black text-slate-800 text-base mt-1">{order.patient_name}</h4>
                       <p className="text-xs text-slate-400 font-bold mt-0.5">{order.patient_phone}</p>
                     </div>
-                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${statusStyle[order.status] || "bg-slate-100"}`}>
-                      {statusLabel[order.status] || order.status}
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${statusStyle[order.status === "reviewed" && (order as any).payment_status === "paid" ? "paid" : order.status] || "bg-slate-100"}`}>
+                      {statusLabel[order.status === "reviewed" && (order as any).payment_status === "paid" ? "paid" : order.status] || order.status}
                     </span>
                   </div>
 

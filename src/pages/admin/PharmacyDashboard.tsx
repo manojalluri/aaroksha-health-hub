@@ -12,7 +12,7 @@ import {
   Pill, Search, CheckCircle, XCircle, Eye, Package,
   Plus, Trash2, Truck, Phone, MapPin, BarChart3,
   FileText, ImageIcon, IndianRupee, MessageCircle, LogOut, ArrowUpRight, Download,
-  Loader2, TrendingUp,
+  Loader2, TrendingUp, Clock
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
@@ -213,10 +213,11 @@ const PharmacyDashboard = () => {
 
   // ─── Stats ──────────────────────────────────────────────────────────────
   const stats = [
-    { label: "New Requests", value: orders.filter(o => o.status === "pending" && !o.partner_id).length, color: "text-amber-600", bg: "bg-amber-50" },
-    { label: "Our Queue", value: orders.filter(o => o.partner_id === partner?.partner_id && ["reviewed", "dispatched", "collected"].includes(o.status)).length, color: "text-blue-600", bg: "bg-blue-50" },
-    { label: "Delivered", value: orders.filter(o => (o.partner_id === partner?.partner_id || (!o.partner_id && o.status === 'completed')) && o.status === "completed").length, color: "text-emerald-600", bg: "bg-emerald-50" },
-    { label: "Revenue", value: `₹${(revenueData?.total || 0).toLocaleString("en-IN")}`, color: "text-emerald-600", bg: "bg-emerald-50" },
+    { label: "New Requests", value: orders.filter(o => o.status === "pending" && !o.partner_id).length, color: "text-amber-600", bg: "bg-amber-50", icon: FileText },
+    { label: "Our Queue", value: orders.filter(o => o.partner_id === partner?.partner_id && ["reviewed"].includes(o.status)).length, color: "text-blue-600", bg: "bg-blue-50", icon: Clock },
+    { label: "Ready for Pickup", value: orders.filter(o => o.partner_id === partner?.partner_id && ["dispatched"].includes(o.status)).length, color: "text-orange-600", bg: "bg-orange-50", icon: Package },
+    { label: "Delivered", value: orders.filter(o => (o.partner_id === partner?.partner_id || (!o.partner_id && o.status === 'completed')) && o.status === "completed").length, color: "text-emerald-600", bg: "bg-emerald-50", icon: CheckCircle },
+    { label: "Revenue", value: `₹${(revenueData?.total || 0).toLocaleString("en-IN")}`, color: "text-emerald-600", bg: "bg-emerald-50", icon: IndianRupee },
   ];
 
   // ─── Open review modal ────────────────────────────────────────────────────
@@ -353,7 +354,7 @@ const PharmacyDashboard = () => {
           {stats.map(s => (
             <div key={s.label} className="bg-white rounded-2xl p-4 border border-white shadow-sm flex items-center gap-3 hover:shadow-md transition-shadow">
               <div className={`h-9 w-9 ${s.bg} rounded-xl flex items-center justify-center shrink-0`}>
-                <IndianRupee className={`h-4 w-4 ${s.color}`} />
+                <s.icon className={`h-4 w-4 ${s.color}`} />
               </div>
               <div>
                 <p className="text-lg font-extrabold text-slate-800 leading-none">{s.value}</p>
@@ -452,8 +453,8 @@ const PharmacyDashboard = () => {
                               )}
 
                               {order.status === "dispatched" && (
-                                <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                                  Waiting for Pickup
+                                <span className="text-[10px] font-bold text-orange-600 bg-orange-50 border border-orange-200 px-2 py-1 rounded">
+                                  Ready for Pickup
                                 </span>
                               )}
 
