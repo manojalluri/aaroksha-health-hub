@@ -136,11 +136,15 @@ const BookAppointmentPage = () => {
       const newOrderId = genOrderId("OPD");
       const vCode = Array.from({ length: 6 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 32)]).join("");
       
+      // Defensively ensure IDs are strings/null to avoid UUID mismatch in RPC parameters
+      const uId = user?.id ? String(user.id) : null;
+      const dId = doctor?.id ? String(doctor.id) : null;
+
       // Use the atomic RPC to ensure capacity check and insertion happen in one transaction
       const { data, error } = await supabase.rpc("book_op_appointment", {
         p_order_id: newOrderId,
-        p_user_id: user?.id,
-        p_doctor_id: doctor?.id,
+        p_user_id: uId,
+        p_doctor_id: dId,
         p_doctor_name: doctor?.name,
         p_patient_name: patient.name,
         p_patient_phone: patient.phone,
@@ -159,7 +163,14 @@ const BookAppointmentPage = () => {
         p_verification_code: vCode
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Database Booking Error:", error);
+        // Specifically detect the type mismatch error and provide a clear hint
+        if (error.message.includes("operator does not exist") || error.message.includes("uuid")) {
+          throw new Error("Critical System Error: Database type mismatch. Please ensure the latest SQL migrations are applied.");
+        }
+        throw error;
+      }
       
       if (data && !data.success) {
         if (data.message === "SLOT_FULL") {
@@ -180,7 +191,7 @@ const BookAppointmentPage = () => {
       setStep("confirmed");
       toast.success("Appointment booked successfully!");
     } catch (err: any) {
-      console.error("Booking Error:", err);
+      console.error("Booking Failure:", err);
       toast.error(err?.message || "Failed to process booking. Please try again.");
     } finally {
       setIsSubmitting(false);

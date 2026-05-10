@@ -1,35 +1,32 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const dotenv = require('dotenv');
-const path = require('path');
+dotenv.config({ path: './.env' });
 
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_ANON_KEY);
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL;
-const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY;
+async function checkSchema() {
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('*')
+    .limit(1);
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+  if (error) {
+    console.error('Error fetching appointments:', error);
+  } else {
+    console.log('Appointments sample row:', data[0]);
+  }
 
-async function inspectSchema() {
-  console.log('--- Inspecting Partners Table ---');
-  const { data: partnerData, error: partnerError } = await supabase.from('partners').select('*').limit(1);
-  if (partnerError) console.error('Partners Error:', partnerError);
-  else console.log('Partner Columns:', Object.keys(partnerData[0] || {}));
+  const { data: cols, error: colError } = await supabase.rpc('exec_sql', {
+    sql: "SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_name IN ('appointments', 'doctors') ORDER BY table_name, column_name;"
+  });
 
-  console.log('\n--- Inspecting Doctors Table ---');
-  const { data: doctorData, error: doctorError } = await supabase.from('doctors').select('*').limit(1);
-  if (doctorError) console.error('Doctors Error:', doctorError);
-  else console.log('Doctor Columns:', Object.keys(doctorData[0] || {}));
-
-  console.log('\n--- Inspecting Lab Bookings Table ---');
-  const { data: labData, error: labError } = await supabase.from('lab_bookings').select('*').limit(1);
-  if (labError) console.error('Lab Error:', labError);
-  else console.log('Lab Columns:', Object.keys(labData[0] || {}));
-
-  console.log('\n--- Inspecting Prescriptions Table ---');
-  const { data: pharmData, error: pharmError } = await supabase.from('prescriptions').select('*').limit(1);
-  if (pharmError) console.error('Prescriptions Error:', pharmError);
-  else console.log('Prescription Columns:', Object.keys(pharmData[0] || {}));
+  if (colError) {
+    console.error('Error fetching column types:', colError);
+    // Fallback: try to guess from a row if exec_sql fails
+  } else {
+    console.table(cols);
+  }
 }
 
-inspectSchema();
+checkSchema();
