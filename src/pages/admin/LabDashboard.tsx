@@ -76,6 +76,13 @@ interface LabBooking {
 
 const formatBookingId = (b: any) => (b?.order_id || b?.id || "").slice(0, 8).toUpperCase();
 
+const getMerchantSubtotal = (b: LabBooking, settings: any) => {
+  const testsTotal = Array.isArray(b.tests) ? b.tests.reduce((st, t) => st + (t.price || 0), 0) : 0;
+  if (testsTotal > 0) return testsTotal;
+  // Fallback: total_amount minus platform_fee
+  return Math.max(0, (b.total_amount || 0) - (b.platform_fee || Number(settings?.lab_fee || 39)));
+};
+
 interface TechnicianSlot {
   id: string;
   day: string;
@@ -656,10 +663,7 @@ const LabDashboard = () => {
       label: "Revenue",
       val: "₹" + bookings
         .filter((b) => b.status !== "cancelled")
-        .reduce((sum, b) => {
-          const testsTotal = Array.isArray(b.tests) ? b.tests.reduce((s, t) => s + (t.price || 0), 0) : 0;
-          return sum + (testsTotal > 0 ? testsTotal : Math.max(0, (b.total_amount || 0) - (b.platform_fee || Number(settings?.lab_fee))));
-        }, 0)
+        .reduce((sum, b) => sum + getMerchantSubtotal(b, settings), 0)
         .toLocaleString("en-IN"),
       icon: TrendingUp,
       iconBg: "bg-blue-50",
@@ -669,10 +673,8 @@ const LabDashboard = () => {
 
   const settlementData = useMemo(() => {
     const billable = bookings.filter(b => b.status === "completed");
-    // Use tests subtotal only (total_amount minus the platform fee added by super admin)
     const total = billable.reduce((s, b) => {
-      const testsTotal = Array.isArray(b.tests) ? b.tests.reduce((st, t) => st + (t.price || 0), 0) : 0;
-      return s + (testsTotal > 0 ? testsTotal : Math.max(0, (b.total_amount || 0) - (b.platform_fee || Number(settings?.lab_fee))));
+      return s + getMerchantSubtotal(b, settings);
     }, 0);
     const commRate = partner?.commission_rate || 18;
     const platformCommission = (total * commRate) / 100;
@@ -905,7 +907,7 @@ const LabDashboard = () => {
                           </td>
                           <td className="py-4 text-sm font-bold text-slate-800">
                             {/* Show tests subtotal only - platform fee is Aaroksha's revenue, not the lab's */}
-                            ₹{Math.max(0, (b.total_amount || 0) - (b.platform_fee || 39)).toLocaleString("en-IN")}
+                            ₹{getMerchantSubtotal(b, settings).toLocaleString("en-IN")}
                           </td>
                           <td className="py-4">
                             <StatusBadge status={b.status || "pending"} />
@@ -1448,8 +1450,8 @@ const LabDashboard = () => {
                 };
 
                 const completedInRange = bookings.filter(b => b.status === "completed" && inRange(b.collection_date));
-                const totalRevenue = completedInRange.reduce((s, b) => s + (b.total_amount || 0), 0);
-                const allRevenue = bookings.filter(b => b.status !== "cancelled").reduce((s, b) => s + (b.total_amount || 0), 0);
+                const totalRevenue = completedInRange.reduce((s, b) => s + getMerchantSubtotal(b, settings), 0);
+                const allRevenue = bookings.filter(b => b.status !== "cancelled").reduce((s, b) => s + getMerchantSubtotal(b, settings), 0);
 
                 // By status breakdown
                 const byStatus: Record<string, number> = {};
@@ -1588,10 +1590,7 @@ const LabDashboard = () => {
                         return true;
                       });
                       // Base settlement on tests total only - excludes platform fee
-                      const total = billable.reduce((s, b) => {
-                        const testsTotal = Array.isArray(b.tests) ? b.tests.reduce((st: number, t: any) => st + (t.price || 0), 0) : 0;
-                        return s + (testsTotal > 0 ? testsTotal : Math.max(0, (b.total_amount || 0) - (b.platform_fee || Number(settings?.lab_fee))));
-                      }, 0);
+                      const total = billable.reduce((s, b) => s + getMerchantSubtotal(b, settings), 0);
                       const rate = partner?.commission_rate || 18;
                       const comm = partner?.commission_type === "fixed"
                         ? billable.length * rate
@@ -1683,8 +1682,7 @@ const LabDashboard = () => {
                             </TableCell></TableRow>
                           );
                           return filtered.slice(0, 15).map(b => {
-                            const testsTotal = Array.isArray(b.tests) ? b.tests.reduce((st, t) => st + (t.price || 0), 0) : 0;
-                            const total = testsTotal > 0 ? testsTotal : Math.max(0, (b.total_amount || 0) - (b.platform_fee || Number(settings?.lab_fee)));
+                            const total = getMerchantSubtotal(b, settings);
                             const rate = partner?.commission_rate || 18;
                             const comm = partner?.commission_type === "fixed"
                               ? rate
@@ -2649,7 +2647,7 @@ const LabDashboard = () => {
                               ))}
                               <div className="text-sm font-black text-blue-600 pt-1">
                                 {/* Tests subtotal only - excludes platform fee */}
-                                Tests Total: ₹{Math.max(0, (b.total_amount || 0) - (b.platform_fee || 39)).toLocaleString("en-IN")}
+                                Tests Total: ₹{getMerchantSubtotal(b, settings).toLocaleString("en-IN")}
                               </div>
                             </div>
                           </div>

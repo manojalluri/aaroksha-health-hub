@@ -540,7 +540,7 @@ const SuperAdminDashboard = () => {
         .filter(b => b.partner_id === p.partner_id)
         .reduce((s, b) => {
           const testsTotal = Array.isArray(b.tests) ? b.tests.reduce((st: number, t: any) => st + (t.price || 0), 0) : 0;
-          return s + (testsTotal > 0 ? testsTotal : Math.max(0, (b.total_amount || 0) - (b.platform_fee || Number(toggles?.lab_fee || 49))));
+          return s + (testsTotal > 0 ? testsTotal : Math.max(0, (b.total_amount || 0) - (b.platform_fee || Number(toggles?.lab_fee || 39))));
         }, 0);
     }
     if (p.type === "pharmacy") {
