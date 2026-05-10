@@ -23,6 +23,7 @@
  */
 
 import { supabase } from "./supabase";
+import { toast } from "sonner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type AdminRole = "super" | "hospital" | "lab" | "pharmacy" | "logistics";
@@ -222,7 +223,7 @@ export const authenticatePartner = async (
   if (!cleanEmail || !cleanPassword) return null;
 
   try {
-    // ── 1. Call Smart RPC (handles Bcrypt & Plaintext Fallback) ──
+    // ── 1. Attempt Authentication ──
     const { data: rpcData, error: rpcErr } = await supabase.rpc(
       "authenticate_partner",
       { 
@@ -233,20 +234,40 @@ export const authenticatePartner = async (
     );
 
     if (rpcErr) {
-      console.error(`[adminAuth] RPC Error for ${type}:`, rpcErr.message);
+      console.error(`[adminAuth] RPC Error:`, rpcErr.message);
       return null;
     }
 
+    // ── 2. Handle Success ──
     if (rpcData && rpcData.length > 0) {
-      const partner = rpcData[0];
-      console.log(`[adminAuth] Successful login for ${type}:`, partner.name);
-      return partner as { id: string; partner_id: string; name: string };
+      return rpcData[0] as { id: string; partner_id: string; name: string };
     }
 
-    console.warn(`[adminAuth] Login failed for ${type}: ${cleanEmail} - check credentials or status.`);
+    // ── 3. Diagnostic Check: Why did it fail? ──
+    // If we reach here, either the password was wrong OR the status is not active.
+    const { data: partnerCheck } = await supabase
+      .from("partners")
+      .select("status, name")
+      .eq("email", cleanEmail)
+      .eq("type", type)
+      .maybeSingle();
+
+    if (partnerCheck) {
+      if (partnerCheck.status !== "active") {
+        console.warn(`[adminAuth] Login blocked: ${partnerCheck.name} is currently "${partnerCheck.status}".`);
+        toast.error(`Your account (${partnerCheck.name}) is currently ${partnerCheck.status}. Please contact the Super Admin.`);
+      } else {
+        console.warn(`[adminAuth] Invalid password for: ${cleanEmail}`);
+        toast.error("Invalid password. Please check and try again.");
+      }
+    } else {
+      console.warn(`[adminAuth] No ${type} partner found with email: ${cleanEmail}`);
+      toast.error(`No ${type} account found with that email.`);
+    }
+
     return null;
   } catch (err: any) {
-    console.error(`[adminAuth] Critical failure during ${type} auth:`, err.message);
+    console.error(`[adminAuth] Critical failure:`, err.message);
     return null;
   }
 };

@@ -50,7 +50,6 @@ const LogisticsLogin = () => {
     } catch {
       const { blocked, waitMs } = recordFailedAttempt(cleanEmail);
       if (blocked) { startLockoutCountdown(waitMs); toast.error("Account temporarily locked."); }
-      else toast.error("Invalid credentials or account inactive.");
     } finally {
       setLoading(false);
     }
