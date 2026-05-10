@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { getURL } from "@/lib/utils";
 import { checkIsLoggedIn, isRateLimited, recordFailedAttempt, clearAttempts } from "@/lib/adminAuth";
 
 const SuperAdminLogin = () => {
@@ -163,7 +164,7 @@ const SuperAdminLogin = () => {
 
       // ── Email is authorised — trigger Supabase password reset ──
       const { error: resetErr } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-        redirectTo: `${window.location.origin}/admin/reset-password`,
+        redirectTo: `${getURL()}/admin/reset-password`,
       });
       if (resetErr) throw resetErr;
 

@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { getURL } from "@/lib/utils";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 
@@ -205,7 +206,7 @@ const AuthPage = () => {
     setResetLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: `${getURL()}/reset-password`,
       });
       if (error) throw error;
       setMode("sent");
