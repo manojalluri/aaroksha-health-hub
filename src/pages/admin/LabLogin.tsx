@@ -135,12 +135,6 @@ const LabLogin = () => {
               </div>
             </div>
 
-            <div className="flex justify-end">
-              <button type="button" className="text-[11px] font-bold text-purple-400 hover:text-purple-300 transition-colors">
-                Forgot Password?
-              </button>
-            </div>
-
             {/* Submit */}
             <button
               type="submit"

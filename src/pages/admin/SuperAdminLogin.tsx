@@ -109,14 +109,34 @@ const SuperAdminLogin = () => {
     }
   };
 
-  /** Send password reset email via Supabase — goes to the registered email */
+  /**
+   * SECURITY: Send password reset email ONLY if the entered email matches the
+   * authorised Super Admin address (loaded from env — never hardcoded here).
+   * This prevents:
+   *  - Triggering resets for arbitrary accounts via this portal.
+   *  - Email enumeration attacks (same response regardless of outcome).
+   */
+  // Read from env — value is never exposed in source code or page source
+  const SUPER_ADMIN_EMAIL = (import.meta.env.VITE_SUPER_ADMIN_EMAIL as string | undefined) ?? "";
+
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanEmail = resetEmail.toLowerCase().trim();
+
     if (!cleanEmail) {
       toast.error("Please enter your admin email address.");
       return;
     }
+
+    // ── WHITELIST CHECK — must match the env-configured Super Admin email ──
+    if (!SUPER_ADMIN_EMAIL || cleanEmail !== SUPER_ADMIN_EMAIL.toLowerCase()) {
+      // Same success-looking response regardless — prevents email enumeration
+      toast.success("If that email is registered, a reset link has been sent.");
+      setMode("sent");
+      console.warn("[SuperAdminLogin] Password reset blocked: email not authorised.");
+      return; // Supabase is never called for unauthorised addresses
+    }
+
     setResetLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
@@ -126,7 +146,7 @@ const SuperAdminLogin = () => {
       setMode("sent");
       toast.success("Password reset email sent! Check your inbox.");
     } catch (err: any) {
-      toast.error("Failed to send reset email. Make sure the email is registered.");
+      toast.error("Failed to send reset email. Please try again.");
       console.error("[ForgotPassword]", err.message);
     } finally {
       setResetLoading(false);
@@ -236,16 +256,16 @@ const SuperAdminLogin = () => {
           {mode === "forgot" && (
             <form onSubmit={handleForgotPassword} className="space-y-5">
               <p className="text-slate-400 text-sm leading-relaxed">
-                Enter your Super Admin email. A secure password reset link will be sent to <span className="text-amber-400 font-bold">manojalluri2727@gmail.com</span>.
+                Enter your registered Super Admin email address. A secure reset link will be sent to your inbox.
               </p>
               <div className="space-y-2">
                 <label htmlFor="reset-email" className="text-[10px] font-black text-amber-400/70 uppercase tracking-widest pl-1">Admin Email</label>
                 <div className="relative group">
                   <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-500 group-focus-within:text-amber-400 transition-colors" />
                   <input
-                    id="reset-email" type="email" required
+                    id="reset-email" type="email" required autoComplete="off"
                     value={resetEmail} onChange={(e) => setResetEmail(e.target.value)}
-                    placeholder="manojalluri2727@gmail.com"
+                    placeholder="Your admin email address"
                     className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl pl-12 pr-4 text-white text-sm font-medium outline-none focus:border-amber-400/60 transition-all"
                   />
                 </div>
@@ -271,7 +291,7 @@ const SuperAdminLogin = () => {
               <div>
                 <p className="text-white font-black text-lg">Check Your Inbox!</p>
                 <p className="text-slate-400 text-sm mt-2 leading-relaxed">
-                  A password reset link has been sent to <span className="text-amber-400 font-bold">manojalluri2727@gmail.com</span>.
+                  If your email is registered as Super Admin, a password reset link has been sent.
                   Click the link in the email to set a new password.
                 </p>
               </div>

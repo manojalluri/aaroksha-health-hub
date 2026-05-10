@@ -1,9 +1,14 @@
 import { supabase } from "./supabase";
 
 /**
- * PhonePe Payment Service (Startup Grade)
- * In a real production app, the payload signing MUST happen on the backend (Supabase Edge Functions).
- * This service provides the frontend logic to initiate payments and handle callbacks.
+ * PhonePe Payment Service
+ * ─────────────────────────────────────────────────────────────────
+ * In production, payload signing MUST happen on the backend
+ * (Supabase Edge Functions). This module provides the frontend
+ * interface to initiate payments and check status.
+ *
+ * SECURITY: No API keys, secrets, or merchant IDs are stored here.
+ *           All sensitive signing happens server-side via Edge Function.
  */
 
 export interface PaymentInitiateResponse {
@@ -22,9 +27,9 @@ export interface PaymentInitiateResponse {
 
 export const PhonePeService = {
   /**
-   * Initiates a payment request with PhonePe.
-   * For this startup project, we'll implement a robust flow that can be 
-   * switched from 'SIMULATED' to 'LIVE' easily.
+   * Initiates a payment request.
+   * In LIVE mode, this calls the Supabase Edge Function `phonepe-pay`
+   * which handles payload signing server-side with the merchant secret.
    */
   async initiatePayment(params: {
     transactionId: string;
@@ -34,22 +39,19 @@ export const PhonePeService = {
     callbackUrl: string;
     redirectUrl: string;
   }) {
-    console.log("Initiating PhonePe Payment for amount:", params.amount);
+    /*
+     * LIVE: Uncomment this block and remove the simulation below.
+     * const { data, error } = await supabase.functions.invoke('phonepe-pay', {
+     *   body: params
+     * });
+     * if (error) throw error;
+     * return data;
+     */
 
-    /* 
-       Note: In a LIVE environment, you would call:
-       const { data, error } = await supabase.functions.invoke('phonepe-pay', {
-         body: params
-       });
-       
-       For now, we'll implement a simulated premium gateway experience that 
-       updates the Supabase database correctly, making the startup "functional".
-    */
-
-    // Simulate network delay
+    // Simulate network delay (remove when switching to LIVE)
     await new Promise(r => setTimeout(r, 1500));
 
-    // For now, we simulate success and redirect to a processing page
+    // Simulated success response
     return {
       success: true,
       redirectUrl: `${params.redirectUrl}?txnId=${params.transactionId}&status=success`,
@@ -57,23 +59,22 @@ export const PhonePeService = {
   },
 
   async verifyStatus(transactionId: string) {
-    // This would typically call the backend to check with PhonePe API
-    const { data, error } = await supabase
-      .from('appointments')
-      .select('payment_status')
-      .eq('payment_id', transactionId)
+    // Check appointments first
+    const { data } = await supabase
+      .from("appointments")
+      .select("payment_status")
+      .eq("payment_id", transactionId)
       .single();
-    
-    // If not found in appointments, check lab_bookings
-    if (!data) {
-      const { data: labData } = await supabase
-        .from('lab_bookings')
-        .select('payment_status')
-        .eq('id', transactionId) // using id as fallback
-        .single();
-      return labData?.payment_status === 'paid';
-    }
 
-    return data?.payment_status === 'paid';
-  }
+    if (data) return data.payment_status === "paid";
+
+    // Fallback: check lab_bookings
+    const { data: labData } = await supabase
+      .from("lab_bookings")
+      .select("payment_status")
+      .eq("id", transactionId)
+      .single();
+
+    return labData?.payment_status === "paid";
+  },
 };

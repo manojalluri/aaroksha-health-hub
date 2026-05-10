@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
   Mail, Phone, Lock, User, Loader2, CheckCircle,
-  Eye, EyeOff, MapPin, KeyRound, CheckCircle2, ArrowLeft,
+  Eye, EyeOff, MapPin, KeyRound, CheckCircle2, ArrowLeft, Timer,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+
+const RESEND_COOLDOWN_SECONDS = 60;
 
 // ─── Field component MUST be outside AuthPage to avoid focus-loss on re-render
 interface FieldProps {
@@ -56,6 +58,26 @@ const AuthPage = () => {
   const [password,   setPassword]   = useState("");
   const [resetEmail, setResetEmail] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0); // seconds remaining
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Start/clear the 60-second resend cooldown
+  const startCooldown = () => {
+    setResendCooldown(RESEND_COOLDOWN_SECONDS);
+    cooldownRef.current = setInterval(() => {
+      setResendCooldown(prev => {
+        if (prev <= 1) {
+          clearInterval(cooldownRef.current!);
+          cooldownRef.current = null;
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  // Clean up timer on unmount
+  useEffect(() => () => { if (cooldownRef.current) clearInterval(cooldownRef.current); }, []);
 
   // ── Sync profile to localStorage after auth ────────────────────────────
   const syncProfileToLocal = (userData: any, extraAddress = "") => {
@@ -174,6 +196,12 @@ const AuthPage = () => {
       toast.error("Please enter your registered email address.");
       return;
     }
+    // Basic email format check
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      toast.error("Please enter a valid email address.");
+      return;
+    }
+    if (resendCooldown > 0) return; // guard against rapid re-clicks
     setResetLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
@@ -181,6 +209,7 @@ const AuthPage = () => {
       });
       if (error) throw error;
       setMode("sent");
+      startCooldown();
       toast.success("Password reset email sent!");
     } catch (err: any) {
       toast.error("Failed to send reset email. Please check your email address.");
@@ -410,10 +439,15 @@ const AuthPage = () => {
 
             <button
               type="button"
+              disabled={resendCooldown > 0}
               onClick={() => setMode("forgot")}
-              className="text-blue-500 hover:text-blue-700 text-sm font-bold underline underline-offset-2 transition-colors"
+              className="flex items-center gap-1.5 text-blue-500 hover:text-blue-700 text-sm font-bold underline underline-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
             >
-              Resend Email
+              {resendCooldown > 0 ? (
+                <><Timer className="h-3.5 w-3.5" /> Resend in {resendCooldown}s</>
+              ) : (
+                "Resend Email"
+              )}
             </button>
 
             <button

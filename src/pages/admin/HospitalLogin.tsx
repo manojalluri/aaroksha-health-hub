@@ -143,12 +143,6 @@ const HospitalLogin = () => {
               </div>
             </div>
 
-            <div className="flex justify-end">
-              <button type="button" className="text-[11px] font-bold text-blue-400 hover:text-blue-300 transition-colors">
-                Forgot Password?
-              </button>
-            </div>
-
             {/* Submit */}
             <button
               type="submit"

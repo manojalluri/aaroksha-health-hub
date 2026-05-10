@@ -132,12 +132,6 @@ const LogisticsLogin = () => {
               </div>
             </div>
 
-            <div className="flex justify-end">
-              <button type="button" className="text-[11px] font-bold text-sky-400 hover:text-sky-300 transition-colors">
-                Forgot Password?
-              </button>
-            </div>
-
             {/* Submit */}
             <button
               type="submit"

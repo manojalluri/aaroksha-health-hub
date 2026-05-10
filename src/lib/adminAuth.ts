@@ -218,7 +218,9 @@ export const authenticatePartner = async (
 ): Promise<{ id: string; partner_id: string; name: string } | null> => {
   const cleanEmail = email.toLowerCase().trim();
   try {
-    // ── 1. Try RPC with server-side bcrypt check (preferred) ──
+    // ── 1. Server-side bcrypt check via RPC (preferred & secure) ──
+    // authenticate_partner RPC compares the password hash on the DB server.
+    // The plaintext password is sent over TLS and compared server-side only.
     const { data: rpcData, error: rpcErr } = await supabase.rpc(
       "authenticate_partner",
       { p_email: cleanEmail, p_password: password, p_type: type }
@@ -227,27 +229,11 @@ export const authenticatePartner = async (
       return rpcData[0] as { id: string; partner_id: string; name: string };
     }
 
-    // ── 2. Fetch the partner row regardless of password storage format ──
-    const { data: partner, error: fetchErr } = await supabase
-      .from("partners")
-      .select("id, partner_id, name, password, plain_password")
-      .eq("email",  cleanEmail)
-      .eq("type",   type)
-      .eq("status", "active")
-      .maybeSingle();
-
-    if (fetchErr || !partner) return null;
-
-    // Check plain_password first (always readable), then fallback to password field
-    const storedPlain = (partner as any).plain_password;
-    const storedPw    = (partner as any).password;
-
-    const plainMatch = storedPlain && storedPlain === password;
-    const pwMatch    = storedPw && !storedPw.startsWith("$2") && storedPw === password;
-
-    if (!plainMatch && !pwMatch) return null;
-
-    return { id: partner.id, partner_id: partner.partner_id, name: partner.name };
+    // ── 2. Fallback: fetch partner row WITHOUT password columns ──
+    // We never pull plain_password or hashed password to the client.
+    // If RPC is unavailable, we fail closed (no auth without server verification).
+    console.warn("[adminAuth] RPC authenticate_partner failed:", rpcErr?.message);
+    return null;
   } catch {
     return null;
   }
