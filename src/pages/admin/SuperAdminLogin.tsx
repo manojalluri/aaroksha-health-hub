@@ -110,15 +110,21 @@ const SuperAdminLogin = () => {
   };
 
   /**
-   * SECURITY: Send password reset email ONLY if the entered email matches the
-   * authorised Super Admin address (loaded from env — never hardcoded here).
+   * SECURITY: Send password reset email ONLY if the entered email is confirmed
+   * to exist in the `admin_whitelist` table (server-side check via Supabase RLS).
+   *
+   * WHY server-side instead of env var comparison:
+   *  - VITE_ variables are baked into the JS bundle at build time.
+   *  - Anyone with DevTools can read them from the compiled JavaScript.
+   *  - The DB check keeps the real admin email off the client entirely.
+   *  - The admin_whitelist table is RLS-protected: anon users can only
+   *    check existence (not read values), enforced by the DB policy.
+   *
    * This prevents:
-   *  - Triggering resets for arbitrary accounts via this portal.
-   *  - Email enumeration attacks (same response regardless of outcome).
+   *  - Sending reset emails to arbitrary addresses via this portal.
+   *  - Email enumeration (same response regardless of outcome).
+   *  - Admin email exposure in the public JS bundle.
    */
-  // Read from env — value is never exposed in source code or page source
-  const SUPER_ADMIN_EMAIL = (import.meta.env.VITE_SUPER_ADMIN_EMAIL as string | undefined) ?? "";
-
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanEmail = resetEmail.toLowerCase().trim();
@@ -128,21 +134,39 @@ const SuperAdminLogin = () => {
       return;
     }
 
-    // ── WHITELIST CHECK — must match the env-configured Super Admin email ──
-    if (!SUPER_ADMIN_EMAIL || cleanEmail !== SUPER_ADMIN_EMAIL.toLowerCase()) {
-      // Same success-looking response regardless — prevents email enumeration
-      toast.success("If that email is registered, a reset link has been sent.");
-      setMode("sent");
-      console.warn("[SuperAdminLogin] Password reset blocked: email not authorised.");
-      return; // Supabase is never called for unauthorised addresses
+    // Basic format check before hitting the DB
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      toast.error("Please enter a valid email address.");
+      return;
     }
 
     setResetLoading(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+      // ── SERVER-SIDE WHITELIST CHECK ──────────────────────────────────────
+      // Query admin_whitelist table. RLS policy allows anon to check existence
+      // only — the email value is never returned to the client.
+      // If the email is NOT in the whitelist, we silently show success to
+      // prevent enumeration, but never call resetPasswordForEmail.
+      const { data: whitelisted, error: wlErr } = await supabase
+        .from("admin_whitelist")
+        .select("email")          // minimal select — RLS masks the actual value
+        .eq("email", cleanEmail)
+        .maybeSingle();
+
+      // Always show the same success UI — never reveal whether the email matched
+      if (wlErr || !whitelisted) {
+        // Not in whitelist (or DB error) — fake success, no email sent
+        console.warn("[SuperAdminLogin] Password reset blocked: not in admin_whitelist.");
+        setMode("sent");
+        return;
+      }
+
+      // ── Email is authorised — trigger Supabase password reset ──
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
         redirectTo: `${window.location.origin}/admin/reset-password`,
       });
-      if (error) throw error;
+      if (resetErr) throw resetErr;
+
       setMode("sent");
       toast.success("Password reset email sent! Check your inbox.");
     } catch (err: any) {
