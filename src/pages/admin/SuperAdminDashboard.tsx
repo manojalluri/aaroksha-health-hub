@@ -716,8 +716,8 @@ const SuperAdminDashboard = () => {
 
   // Delivery orders = prescriptions + lab bookings for logistics management
   const deliveryOrders = [
-    ...prescriptions.filter(p => ["dispatched", "collected", "completed", "reviewed", "paid"].includes(p.status)).map(p => ({ ...p, type: 'pharmacy' as const })),
-    ...labBookings.filter(b => ["confirmed", "collected", "processing", "completed"].includes(b.status)).map(b => ({ ...b, type: 'lab' as const }))
+    ...filteredPrescriptions.filter(p => ["dispatched", "collected", "completed", "reviewed", "paid"].includes(p.status)).map(p => ({ ...p, type: 'pharmacy' as const })),
+    ...filteredLabBookings.filter(b => ["confirmed", "collected", "processing", "completed"].includes(b.status)).map(b => ({ ...b, type: 'lab' as const }))
   ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   const totalToDeliver   = deliveryOrders.length;
   const pendingDelivery  = deliveryOrders.filter(p => ["reviewed", "dispatched", "collected", "paid"].includes(p.status)).length;
@@ -2354,6 +2354,33 @@ const SuperAdminDashboard = () => {
           {/* ── LOGISTICS HUB ──────────────────────────────────────────── */}
           {activeTab === "logistics_hub" && (
             <div className="space-y-6">
+              
+              {/* Header & Date Filter */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">Logistics Management</h2>
+                  <p className="text-slate-400 text-sm font-medium">Assign deliveries and track partner performance</p>
+                </div>
+                <div className="flex items-center gap-3 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm shrink-0">
+                  <div className="flex bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 items-center gap-3">
+                    <Calendar className="h-4 w-4 text-slate-400" />
+                    <select value={dateFilter} onChange={e => setDateFilter(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 outline-none w-40">
+                      <option value="today">Today Only</option>
+                      <option value="yesterday">Yesterday</option>
+                      <option value="week">Past 7 Days</option>
+                      <option value="month">Past 30 Days</option>
+                      <option value="all">All Time</option>
+                      <option value="custom">Custom Range</option>
+                    </select>
+                  </div>
+                  {dateFilter === "custom" && (
+                    <div className="flex gap-2">
+                      <input type="date" value={customDate.start} onChange={e => setCustomDate({...customDate, start: e.target.value})} className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 outline-none" />
+                      <input type="date" value={customDate.end} onChange={e => setCustomDate({...customDate, end: e.target.value})} className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 outline-none" />
+                    </div>
+                  )}
+                </div>
+              </div>
 
               {/* Stats Row */}
               <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
