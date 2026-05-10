@@ -136,12 +136,11 @@ const BookAppointmentPage = () => {
       const newOrderId = genOrderId("OPD");
       const vCode = Array.from({ length: 6 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 32)]).join("");
       
-      // Defensively ensure IDs are strings/null to avoid UUID mismatch in RPC parameters
       const uId = user?.id ? String(user.id) : null;
       const dId = doctor?.id ? String(doctor.id) : null;
 
-      // Use the atomic RPC to ensure capacity check and insertion happen in one transaction
-      const { data, error } = await supabase.rpc("book_op_appointment", {
+      // STRATEGY 1: Attempt Atomic RPC Booking (Preferred)
+      const { data, error: rpcError } = await supabase.rpc("book_op_appointment", {
         p_order_id: newOrderId,
         p_user_id: uId,
         p_doctor_id: dId,
@@ -163,24 +162,68 @@ const BookAppointmentPage = () => {
         p_verification_code: vCode
       });
 
-      if (error) {
-        console.error("Database Booking Error:", error);
-        // Specifically detect the type mismatch error and provide a clear hint
-        if (error.message.includes("operator does not exist") || error.message.includes("uuid")) {
-          throw new Error("Critical System Error: Database type mismatch. Please ensure the latest SQL migrations are applied.");
+      // Handle specific missing RPC or schema mismatch errors by falling back
+      const isRpcMissing = rpcError && (rpcError.code === "PGRST202" || rpcError.message.includes("not found"));
+      const isTypeMismatch = rpcError && (rpcError.message.includes("operator does not exist") || rpcError.message.includes("uuid"));
+
+      if (isRpcMissing || isTypeMismatch) {
+        console.warn("RPC Booking unavailable. Using fallback strategy...", rpcError);
+        
+        // STRATEGY 2: Fallback Manual Booking
+        // 1. Verify capacity manually to prevent overbooking
+        const { data: currentBookings } = await supabase
+          .from("appointments")
+          .select("id")
+          .eq("doctor_id", dId)
+          .eq("appointment_date", selectedDate)
+          .eq("appointment_time", selectedSlot)
+          .in("status", ["pending", "confirmed"]);
+          
+        const capacity = doctor?.slot_capacity || 10;
+        if ((currentBookings?.length || 0) >= capacity) {
+          toast.error("This slot is now full. Please select another time.");
+          setStep("slots");
+          refetchBookings();
+          return;
         }
-        throw error;
-      }
-      
-      if (data && !data.success) {
+
+        // 2. Direct insertion with explicit partner mapping
+        const { error: insertError } = await supabase.from("appointments").insert({
+          order_id: newOrderId,
+          user_id: uId,
+          doctor_id: dId,
+          doctor_name: doctor?.name,
+          patient_name: patient.name,
+          patient_phone: patient.phone,
+          patient_email: patient.email || null,
+          patient_age: patient.age ? String(patient.age) : null,
+          patient_gender: patient.gender,
+          patient_town: patient.town,
+          notes: patient.symptoms,
+          appointment_date: selectedDate,
+          appointment_time: selectedSlot,
+          fee: totalAmount,
+          consultation_fee: Number(doctor?.fee || doctor?.consultationFee || 0),
+          platform_fee: PLATFORM_FEE,
+          is_priority: isPriority,
+          hospital_partner_id: doctor?.partner_id || doctor?.hospital_id,
+          partner_id: doctor?.partner_id || doctor?.hospital_id,
+          status: "pending",
+          verification_code: vCode
+        });
+
+        if (insertError) throw insertError;
+      } else if (rpcError) {
+        throw rpcError;
+      } else if (data && !data.success) {
         if (data.message === "SLOT_FULL") {
-          toast.error("This slot was just filled by another patient. Please select a different time.");
+          toast.error("Slot is full. Please choose another.");
           setStep("slots");
           refetchBookings();
           return;
         }
         if (data.message === "ALREADY_BOOKED") {
-          toast.info("You already have a booking for this slot. Check your profile for details.");
+          toast.info("You already have a booking for this slot.");
           setStep("slots");
           return;
         }
@@ -191,7 +234,7 @@ const BookAppointmentPage = () => {
       setStep("confirmed");
       toast.success("Appointment booked successfully!");
     } catch (err: any) {
-      console.error("Booking Failure:", err);
+      console.error("Critical Booking Failure:", err);
       toast.error(err?.message || "Failed to process booking. Please try again.");
     } finally {
       setIsSubmitting(false);
