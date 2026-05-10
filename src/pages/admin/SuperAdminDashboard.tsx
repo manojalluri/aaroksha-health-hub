@@ -714,6 +714,27 @@ const SuperAdminDashboard = () => {
     }
   };
 
+  const [dispatchingId, setDispatchingId] = useState<string | null>(null);
+
+  const handleDispatch = async (orderId: string, type: 'pharmacy' | 'lab') => {
+    if (type !== 'pharmacy') return;
+    setDispatchingId(orderId);
+    try {
+      const { error } = await supabase
+        .from('prescriptions')
+        .update({ status: 'dispatched' })
+        .eq('id', orderId);
+      if (error) throw error;
+      qc.invalidateQueries({ queryKey: ["admin-prescriptions"] });
+      toast.success("Order marked as dispatched!");
+    } catch (err: any) {
+      toast.error("Failed to dispatch: " + err.message);
+    } finally {
+      setDispatchingId(null);
+    }
+  };
+
+
   // Delivery orders = prescriptions + lab bookings for logistics management
   const deliveryOrders = [
     ...filteredPrescriptions.filter(p => ["dispatched", "collected", "completed", "reviewed", "paid"].includes(p.status)).map(p => ({ ...p, type: 'pharmacy' as const })),
@@ -2588,6 +2609,16 @@ const SuperAdminDashboard = () => {
                                   {assigningId === order.id && (
                                     <Loader2 className="h-4 w-4 text-indigo-400 animate-spin" />
                                   )}
+                                  {((order as any).type === "pharmacy" && order.status === "paid" && (order as any).logistics_partner_id) ? (
+                                    <button 
+                                      onClick={() => handleDispatch(order.id, (order as any).type)}
+                                      disabled={dispatchingId === order.id}
+                                      className="h-9 px-3 ml-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition-all shadow-md flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                      {dispatchingId === order.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Truck className="h-3 w-3" />}
+                                      Dispatch
+                                    </button>
+                                  ) : null}
                                 </div>
                               ) : (
                                 <div className="flex items-center gap-1.5 text-emerald-600 text-xs font-black bg-emerald-50 px-3 py-1.5 rounded-xl">
