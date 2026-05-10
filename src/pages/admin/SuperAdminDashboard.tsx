@@ -538,12 +538,15 @@ const SuperAdminDashboard = () => {
     if (p.type === "lab") {
       return filteredLabBookings
         .filter(b => b.partner_id === p.partner_id)
-        .reduce((s, b) => s + (b.total_amount || 0), 0);
+        .reduce((s, b) => {
+          const testsTotal = Array.isArray(b.tests) ? b.tests.reduce((st: number, t: any) => st + (t.price || 0), 0) : 0;
+          return s + (testsTotal > 0 ? testsTotal : Math.max(0, (b.total_amount || 0) - (b.platform_fee || Number(toggles?.lab_fee || 49))));
+        }, 0);
     }
     if (p.type === "pharmacy") {
       return filteredPrescriptions
         .filter(pr => pr.partner_id === p.partner_id)
-        .reduce((s, pr) => s + (pr.grand_total || 0), 0);
+        .reduce((s, pr) => s + (pr.sub_total || 0), 0);
     }
     if (p.type === "logistics") {
       return filteredPrescriptions
@@ -562,9 +565,11 @@ const SuperAdminDashboard = () => {
   };
 
   const getPartnerPlatformFees = (p: Partner, txnCount: number) => {
-    if (p.type === 'hospital') return txnCount * 29;
-    if (p.type === 'lab') return txnCount * 49;
-    if (p.type === 'pharmacy') return txnCount * 19;
+    // In our new standardized logic, we show 'earned' as the product subtotal.
+    // The 'platform fees' row in Super Admin Payouts should represent the total platform fees collected per partner.
+    if (p.type === 'hospital') return txnCount * (toggles?.opd_fee || 29);
+    if (p.type === 'lab') return txnCount * (toggles?.lab_fee || 49);
+    if (p.type === 'pharmacy') return txnCount * (toggles?.pharm_fee || 19);
     return 0;
   };
 
