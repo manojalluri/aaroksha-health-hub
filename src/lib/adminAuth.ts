@@ -217,24 +217,36 @@ export const authenticatePartner = async (
   type: Exclude<AdminRole, "super">
 ): Promise<{ id: string; partner_id: string; name: string } | null> => {
   const cleanEmail = email.toLowerCase().trim();
+  const cleanPassword = password.trim();
+
+  if (!cleanEmail || !cleanPassword) return null;
+
   try {
-    // ── 1. Server-side bcrypt check via RPC (preferred & secure) ──
-    // authenticate_partner RPC compares the password hash on the DB server.
-    // The plaintext password is sent over TLS and compared server-side only.
+    // ── 1. Call Smart RPC (handles Bcrypt & Plaintext Fallback) ──
     const { data: rpcData, error: rpcErr } = await supabase.rpc(
       "authenticate_partner",
-      { p_email: cleanEmail, p_password: password, p_type: type }
+      { 
+        p_email: cleanEmail, 
+        p_password: cleanPassword, 
+        p_type: type 
+      }
     );
-    if (!rpcErr && rpcData && rpcData.length > 0) {
-      return rpcData[0] as { id: string; partner_id: string; name: string };
+
+    if (rpcErr) {
+      console.error(`[adminAuth] RPC Error for ${type}:`, rpcErr.message);
+      return null;
     }
 
-    // ── 2. Fallback: fetch partner row WITHOUT password columns ──
-    // We never pull plain_password or hashed password to the client.
-    // If RPC is unavailable, we fail closed (no auth without server verification).
-    console.warn("[adminAuth] RPC authenticate_partner failed:", rpcErr?.message);
+    if (rpcData && rpcData.length > 0) {
+      const partner = rpcData[0];
+      console.log(`[adminAuth] Successful login for ${type}:`, partner.name);
+      return partner as { id: string; partner_id: string; name: string };
+    }
+
+    console.warn(`[adminAuth] Login failed for ${type}: ${cleanEmail} - check credentials or status.`);
     return null;
-  } catch {
+  } catch (err: any) {
+    console.error(`[adminAuth] Critical failure during ${type} auth:`, err.message);
     return null;
   }
 };
