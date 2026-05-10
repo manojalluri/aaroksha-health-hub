@@ -865,40 +865,7 @@ const PrescriptionPage = () => {
             </div>
           )}
 
-          {/* Delivery Code Badge */}
-          {deliveryCode && (
-            <div className="mb-5 w-full max-w-xs">
-              <div className="bg-violet-50 border-2 border-violet-300 rounded-2xl px-5 py-4 flex flex-col items-center gap-2">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="h-7 w-7 bg-violet-100 rounded-xl flex items-center justify-center">
-                    <KeyRound className="h-4 w-4 text-violet-600" />
-                  </div>
-                  <p className="text-[10px] font-black text-violet-500 uppercase tracking-widest">Delivery Code</p>
-                </div>
-                <div
-                  className="w-full flex items-center justify-between bg-white border-2 border-dashed border-violet-300 rounded-xl px-4 py-3 cursor-pointer"
-                  onClick={() => copyCode(deliveryCode)}
-                >
-                  <p className="text-3xl font-black text-violet-700 tracking-[0.35em] font-mono">{deliveryCode}</p>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); copyCode(deliveryCode); }}
-                    className={`h-9 w-9 rounded-xl flex items-center justify-center transition-all ${
-                      codeCopied ? "bg-emerald-100 text-emerald-600" : "bg-violet-100 text-violet-600"
-                    }`}
-                  >
-                    {codeCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  </button>
-                </div>
-                <div className="flex items-start gap-2 mt-1">
-                  <ShieldCheck className="h-3.5 w-3.5 text-violet-400 shrink-0 mt-0.5" />
-                  <p className="text-[10px] font-medium text-violet-600 text-left leading-relaxed">
-                    Share this code with the delivery partner when they arrive.
-                    They must enter it to mark your order as delivered.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
+
 
           <p className="text-sm text-slate-500 font-medium mb-2 leading-relaxed max-w-xs">
             Your medicines will be delivered to
