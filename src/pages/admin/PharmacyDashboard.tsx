@@ -52,19 +52,33 @@ interface PrescriptionOrder {
 
 // --- Status helpers ------------------------------------------------------
 const statusStyle: Record<string, string> = {
-  pending:    "bg-amber-100 text-amber-700 border-amber-200",
-  reviewed:   "bg-blue-100 text-blue-700 border-blue-200",
-  dispatched: "bg-orange-100 text-orange-700 border-orange-200",
-  completed:  "bg-emerald-100 text-emerald-700 border-emerald-200",
-  rejected:   "bg-red-100 text-red-600 border-red-200",
+  pending:           "bg-amber-100 text-amber-700 border-amber-200",
+  reviewed:          "bg-blue-100 text-blue-700 border-blue-200",
+  awaiting_payment:  "bg-violet-100 text-violet-700 border-violet-200",
+  dispatched:        "bg-orange-100 text-orange-700 border-orange-200",
+  out_for_delivery:  "bg-sky-100 text-sky-700 border-sky-200",
+  completed:         "bg-emerald-100 text-emerald-700 border-emerald-200",
+  rejected:          "bg-red-100 text-red-600 border-red-200",
 };
 const statusLabel: Record<string, string> = {
-  pending:    "Pending Review",
-  reviewed:   "Pricing Sent",
-  dispatched: "Dispatched",
-  completed:  "Delivered",
-  rejected:   "Rejected",
+  pending:           "Pending Review",
+  reviewed:          "Pricing Sent",
+  awaiting_payment:  "Awaiting Payment",
+  dispatched:        "Dispatched",
+  out_for_delivery:  "Out for Delivery",
+  completed:         "Delivered",
+  rejected:          "Rejected",
 };
+
+// Ordered steps for the progress tracker
+const WORKFLOW_STEPS = [
+  { key: "pending",          label: "Review" },
+  { key: "reviewed",         label: "Pricing Sent" },
+  { key: "awaiting_payment", label: "Payment" },
+  { key: "dispatched",       label: "Dispatched" },
+  { key: "out_for_delivery", label: "Collected" },
+  { key: "completed",        label: "Delivered" },
+];
 
 const PharmacyDashboard = () => {
   const navigate = useNavigate();
@@ -244,14 +258,16 @@ const PharmacyDashboard = () => {
   const computedGrandTotal = computedSubTotal + platformFee + deliveryFee;
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
+
+  /** Step 1→2: Send pricing to patient. Sets status to 'awaiting_payment'. */
   const handleSendPricing = () => {
     if (!selectedOrder) return;
     if (computedSubTotal <= 0) { toast.error("Set prices for at least one medicine"); return; }
     updateMutation.mutate({
       id: selectedOrder.id,
       updates: {
-        status: "reviewed",
-        partner_id: partner?.partner_id, // Claim the order
+        status: "awaiting_payment",
+        partner_id: partner?.partner_id,
         medicines: editMedicines,
         sub_total: computedSubTotal,
         platform_fee: platformFee,
@@ -260,25 +276,21 @@ const PharmacyDashboard = () => {
         admin_note: adminNote,
       },
     });
-    toast.success(`Pricing sent — Medicines: ₹${computedSubTotal.toLocaleString("en-IN")}. Order claimed.`);
+    toast.success(`Pricing sent — ₹${computedSubTotal.toLocaleString("en-IN")} for medicines. Waiting for patient payment.`);
   };
 
-  const handleDispatch = (id: string) => {
+  /** Step 3→4: Dispatch ONLY after payment confirmed. */
+  const handleDispatch = (order: PrescriptionOrder) => {
+    if (order.payment_status !== "paid") {
+      toast.error("Cannot dispatch — patient has not paid yet. Wait for payment confirmation.");
+      return;
+    }
     const updates: any = { status: "dispatched" };
     if (selectedLogisticsPartnerId) {
       updates.logistics_partner_id = selectedLogisticsPartnerId;
     }
-    updateMutation.mutate({ id, updates });
-    toast.success(`Order dispatched${selectedLogisticsPartnerId ? ' & assigned to logistics partner' : ''}`);
-  };
-
-  const handleMarkDelivered = (id: string, correctCode?: string) => {
-    if (correctCode && deliveryCodeInput !== correctCode) {
-      toast.error("Invalid delivery code. Ask the patient for the code shown in their profile.");
-      return;
-    }
-    updateMutation.mutate({ id, updates: { status: "completed" } });
-    toast.success(`Order marked as delivered`);
+    updateMutation.mutate({ id: order.id, updates });
+    toast.success(`Order dispatched${selectedLogisticsPartnerId ? ' & assigned to logistics partner' : ''}.`);
   };
 
   const handleReject = () => {
@@ -432,20 +444,22 @@ const PharmacyDashboard = () => {
                           <TableCell>
                             <div className="flex gap-1">
                               <Button variant="ghost" size="sm" onClick={() => openReview(order)}>
-                                <Eye className="h-4 w-4 mr-1" /> Review
+                                <Eye className="h-4 w-4 mr-1" /> View
                               </Button>
-                              {order.status === "reviewed" && (
-                                <Button size="sm" className="bg-orange-500 hover:bg-orange-600 text-white h-8 text-xs" onClick={() => handleDispatch(order.id)}>
-                                  <Truck className="h-3 w-3 mr-1" /> Dispatch
-                                </Button>
-                              )}
-                              {order.status === "dispatched" && (
-                                <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs" onClick={() => {
-                                  setSelectedOrder(order);
-                                  setDeliveryCodeInput("");
-                                  setReviewDialogOpen(true);
-                                }}>
-                                  <Package className="h-3 w-3 mr-1" /> Delivered
+                              {/* Dispatch — only enabled after payment confirmed */}
+                              {order.status === "awaiting_payment" && (
+                                <Button
+                                  size="sm"
+                                  className={`h-8 text-xs text-white ${
+                                    order.payment_status === "paid"
+                                      ? "bg-orange-500 hover:bg-orange-600"
+                                      : "bg-slate-300 cursor-not-allowed"
+                                  }`}
+                                  onClick={() => handleDispatch(order)}
+                                  title={order.payment_status !== "paid" ? "Waiting for patient payment" : ""}
+                                >
+                                  <Truck className="h-3 w-3 mr-1" />
+                                  {order.payment_status === "paid" ? "Dispatch" : "Awaiting Pay"}
                                 </Button>
                               )}
                             </div>
@@ -626,9 +640,6 @@ const PharmacyDashboard = () => {
                             return true;
                           });
                           if (filtered.length === 0) return (
-                            <TableRow><TableCell colSpan={4} className="text-center py-8 text-slate-400 text-xs font-bold">
-                              No completed orders for {settlementFilter === "all" ? "any period" : `"${settlementFilter}"`}
-                            </TableCell></TableRow>
                           );
                           return filtered.slice(0, 15).map(o => {
                             // Show only medicines sub_total to partner
@@ -662,13 +673,46 @@ const PharmacyDashboard = () => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-emerald-600" />
-              Review Prescription - {selectedOrder?.order_id || selectedOrder?.id?.slice(0, 8).toUpperCase()}
+              Order {selectedOrder?.order_id || selectedOrder?.id?.slice(0, 8).toUpperCase()}
               {selectedOrder && <span className={`ml-2 inline-flex px-2.5 py-1 rounded-full text-[11px] font-bold border ${statusStyle[selectedOrder.status] || ""}`}>{statusLabel[selectedOrder.status] || selectedOrder.status}</span>}
             </DialogTitle>
           </DialogHeader>
 
           {selectedOrder && (
             <div className="space-y-5 mt-2">
+
+              {/* ── Workflow Progress Tracker ── */}
+              <div className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3">
+                {WORKFLOW_STEPS.map((step, i) => {
+                  const steps = WORKFLOW_STEPS.map(s => s.key);
+                  const currentIdx = steps.indexOf(selectedOrder.status);
+                  const stepIdx = i;
+                  const isDone = stepIdx < currentIdx;
+                  const isCurrent = stepIdx === currentIdx;
+                  return (
+                    <div key={step.key} className="flex items-center">
+                      <div className="flex flex-col items-center gap-1">
+                        <div className={`h-7 w-7 rounded-full flex items-center justify-center text-[10px] font-black border-2 transition-all ${
+                          isDone ? "bg-emerald-500 border-emerald-500 text-white" :
+                          isCurrent ? "bg-emerald-50 border-emerald-500 text-emerald-700" :
+                          "bg-white border-slate-200 text-slate-300"
+                        }`}>
+                          {isDone ? "✓" : i + 1}
+                        </div>
+                        <span className={`text-[8px] font-black uppercase tracking-wider whitespace-nowrap ${
+                          isCurrent ? "text-emerald-600" : isDone ? "text-emerald-400" : "text-slate-300"
+                        }`}>{step.label}</span>
+                      </div>
+                      {i < WORKFLOW_STEPS.length - 1 && (
+                        <div className={`w-6 h-0.5 mx-1 -mt-4 ${
+                          isDone ? "bg-emerald-400" : "bg-slate-200"
+                        }`} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
               {/* Patient info */}
               <div className="grid grid-cols-2 gap-3 p-4 rounded-xl bg-slate-50 border border-slate-100">
                 <div><p className="text-[10px] text-slate-400 uppercase font-bold">Patient</p><p className="font-semibold text-slate-800">{selectedOrder.patient_name}</p></div>
@@ -701,13 +745,13 @@ const PharmacyDashboard = () => {
                 </div>
               )}
 
-              {/* Medicine Entry */}
+              {/* Medicine Entry - editable only at pending stage */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="font-bold text-slate-800 flex items-center gap-2">
                     <Pill className="h-4 w-4 text-emerald-600" /> Medicines & Pricing
                   </h3>
-                  {["pending", "reviewed"].includes(selectedOrder.status) && (
+                  {selectedOrder.status === "pending" && (
                     <Button size="sm" variant="outline" className="h-7 text-xs" onClick={addMedicineRow}>
                       <Plus className="h-3 w-3 mr-1" /> Add Medicine
                     </Button>
@@ -724,33 +768,23 @@ const PharmacyDashboard = () => {
                   <div key={idx} className="p-3 rounded-xl border border-slate-200 bg-white">
                     <div className="grid grid-cols-12 gap-2 items-center">
                       <div className="col-span-5">
-                        <Input
-                          placeholder="Medicine name (e.g. Amoxicillin 500mg)"
-                          value={med.name}
+                        <Input placeholder="Medicine name" value={med.name}
                           onChange={e => updateMedicineField(idx, "name", e.target.value)}
-                          className="h-8 text-sm"
-                          disabled={!["pending", "reviewed"].includes(selectedOrder.status)}
-                        />
+                          className="h-8 text-sm" disabled={selectedOrder.status !== "pending"} />
                       </div>
                       <div className="col-span-2">
-                        <Input
-                          type="number" min={1} placeholder="Qty"
+                        <Input type="number" min={1} placeholder="Qty"
                           value={med.qty || med.quantity || 1}
                           onChange={e => updateMedicineField(idx, "qty", Math.max(1, +e.target.value))}
-                          className="h-8 text-sm"
-                          disabled={!["pending", "reviewed"].includes(selectedOrder.status)}
-                        />
+                          className="h-8 text-sm" disabled={selectedOrder.status !== "pending"} />
                       </div>
                       <div className="col-span-2">
                         <div className="relative">
                           <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">₹</span>
-                          <Input
-                            type="number" min={0} placeholder="Price"
+                          <Input type="number" min={0} placeholder="Price"
                             value={med.price || ""}
                             onChange={e => updateMedicineField(idx, "price", +e.target.value)}
-                            className="h-8 text-sm pl-5"
-                            disabled={!["pending", "reviewed"].includes(selectedOrder.status)}
-                          />
+                            className="h-8 text-sm pl-5" disabled={selectedOrder.status !== "pending"} />
                         </div>
                       </div>
                       <div className="col-span-2">
@@ -759,7 +793,7 @@ const PharmacyDashboard = () => {
                         </span>
                       </div>
                       <div className="col-span-1 flex justify-end">
-                        {["pending", "reviewed"].includes(selectedOrder.status) && (
+                        {selectedOrder.status === "pending" && (
                           <button onClick={() => removeMedicineRow(idx)}
                             className="h-7 w-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-slate-400 hover:text-red-500 transition">
                             <Trash2 className="h-3.5 w-3.5" />
@@ -771,8 +805,8 @@ const PharmacyDashboard = () => {
                 ))}
 
                 {editMedicines.length > 0 && (
-                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-1.5">
-                    <div className="flex justify-between items-center pt-2 border-slate-200">
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+                    <div className="flex justify-between items-center">
                       <span className="font-bold text-slate-800">Medicines Total</span>
                       <span className="text-2xl font-black text-emerald-700">₹{computedSubTotal.toLocaleString("en-IN")}</span>
                     </div>
@@ -780,96 +814,116 @@ const PharmacyDashboard = () => {
                 )}
               </div>
 
-              {/* Note */}
-              <div className="space-y-2">
-                <Label>Note to Patient</Label>
-                <Textarea value={adminNote} onChange={e => setAdminNote(e.target.value)}
-                  placeholder="Add notes about availability, alternatives, instructions..."
-                  rows={2} disabled={!["pending"].includes(selectedOrder.status)} />
-              </div>
-
-              {/* Payment status notice */}
-              {selectedOrder.status === "reviewed" && (
-                <div className="flex items-center gap-3 p-4 rounded-xl bg-violet-50 border border-violet-200">
-                  <MessageCircle className="h-5 w-5 text-violet-600 shrink-0" />
-                  <div>
-                    <p className="text-sm font-bold text-violet-800">Waiting for Patient Payment</p>
-                    <p className="text-xs text-violet-600">
-                      Total ₹{selectedOrder.grand_total} has been communicated. Patient must pay to proceed.
-                      {selectedOrder.payment_status === "paid" && " ✅ Payment received!"}
-                    </p>
-                  </div>
+              {/* Note to patient — only editable at pending step */}
+              {selectedOrder.status === "pending" && (
+                <div className="space-y-2">
+                  <Label>Note to Patient</Label>
+                  <Textarea value={adminNote} onChange={e => setAdminNote(e.target.value)}
+                    placeholder="Add notes about availability, alternatives, instructions..."
+                    rows={2} />
                 </div>
               )}
 
-              {selectedOrder.status === "dispatched" && selectedOrder.delivery_code && (
-                <div className="pt-2">
-                  <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">
-                    Verify Delivery Code
-                  </Label>
-                  <Input 
-                    placeholder="Enter 6-digit code from patient" 
-                    value={deliveryCodeInput}
-                    onChange={(e) => setDeliveryCodeInput(e.target.value.toUpperCase())}
-                    className="h-11 border-2 border-emerald-200 bg-emerald-50 text-center font-black tracking-widest uppercase text-emerald-800"
-                    maxLength={6}
-                  />
+              {/* ── STEP 1 → 2: Send Pricing ── */}
+              {selectedOrder.status === "pending" && (
+                <div className="space-y-2">
+                  <Button className="w-full bg-emerald-600 hover:bg-emerald-700" onClick={handleSendPricing} disabled={updateMutation.isPending}>
+                    <MessageCircle className="h-4 w-4 mr-2" /> Send Pricing to Patient
+                  </Button>
+                  <Button variant="destructive" className="w-full" onClick={handleReject} disabled={updateMutation.isPending}>
+                    <XCircle className="h-4 w-4 mr-2" /> Reject Order
+                  </Button>
                 </div>
               )}
 
-              {/* Action buttons */}
-              <div className="space-y-2">
-                {selectedOrder.status === "pending" && (
-                  <div className="flex gap-2">
-                    <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleSendPricing} disabled={updateMutation.isPending}>
-                      <MessageCircle className="h-4 w-4 mr-2" /> Send Pricing to Patient
-                    </Button>
-                    <Button variant="destructive" className="flex-1" onClick={handleReject} disabled={updateMutation.isPending}>
-                      <XCircle className="h-4 w-4 mr-2" /> Reject
-                    </Button>
-                  </div>
-                )}
-                {selectedOrder.status === "reviewed" && selectedOrder.payment_status === "paid" && (
-                  <div className="space-y-2">
-                    {/* Logistics Partner Assignment */}
-                    <div className="p-3 rounded-xl bg-orange-50 border border-orange-100">
-                      <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-2">
-                        Assign Logistics Partner (optional)
-                      </p>
-                      <select
-                        value={selectedLogisticsPartnerId}
-                        onChange={(e) => setSelectedLogisticsPartnerId(e.target.value)}
-                        className="w-full h-10 bg-white border border-orange-200 rounded-xl px-3 text-xs font-bold text-slate-700 outline-none appearance-none cursor-pointer focus:border-orange-400 transition-all"
-                      >
-                        <option value="">-- No logistics partner --</option>
-                        {logisticsPartners.map((lp: any) => (
-                          <option key={lp.id} value={lp.partner_id}>{lp.name}</option>
-                        ))}
-                      </select>
-                      {logisticsPartners.length === 0 && (
-                        <p className="text-[9px] text-slate-400 mt-1">No active pharmacy logistics partners found.</p>
+              {/* ── STEP 2 → 3: Awaiting Payment banner ── */}
+              {selectedOrder.status === "awaiting_payment" && (
+                <>
+                  <div className={`flex items-start gap-3 p-4 rounded-xl border ${
+                    selectedOrder.payment_status === "paid"
+                      ? "bg-emerald-50 border-emerald-200"
+                      : "bg-violet-50 border-violet-200"
+                  }`}>
+                    <MessageCircle className={`h-5 w-5 shrink-0 mt-0.5 ${selectedOrder.payment_status === "paid" ? "text-emerald-600" : "text-violet-600"}`} />
+                    <div className="flex-1">
+                      {selectedOrder.payment_status === "paid" ? (
+                        <>
+                          <p className="text-sm font-black text-emerald-800">✅ Payment Received — Ready to Dispatch!</p>
+                          <p className="text-xs text-emerald-600 mt-0.5">Patient paid ₹{selectedOrder.grand_total?.toLocaleString("en-IN")}. Assign logistics and dispatch now.</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-sm font-black text-violet-800">⏳ Waiting for Patient Payment</p>
+                          <p className="text-xs text-violet-600 mt-0.5">Pricing of ₹{selectedOrder.grand_total?.toLocaleString("en-IN")} sent. Dispatch will unlock once the patient pays.</p>
+                        </>
                       )}
                     </div>
-                    <Button
-                      className="w-full bg-orange-500 hover:bg-orange-600"
-                      onClick={() => handleDispatch(selectedOrder.id)}
-                      disabled={updateMutation.isPending}
-                    >
-                      <Truck className="h-4 w-4 mr-2" />
-                      {selectedLogisticsPartnerId ? "Dispatch & Assign Logistics" : "Mark as Dispatched"}
-                    </Button>
                   </div>
-                )}
-                {selectedOrder.status === "dispatched" && (
-                  <Button className="w-full bg-emerald-600 hover:bg-emerald-700 font-bold" onClick={() => handleMarkDelivered(selectedOrder.id, selectedOrder.delivery_code)} disabled={updateMutation.isPending}>
-                    <Package className="h-4 w-4 mr-2" /> {selectedOrder.delivery_code ? "Verify & Mark Delivered" : "Mark as Delivered"}
-                  </Button>
-                )}
-              </div>
+
+                  {/* Dispatch only after payment */}
+                  {selectedOrder.payment_status === "paid" && (
+                    <div className="space-y-3">
+                      <div className="p-3 rounded-xl bg-orange-50 border border-orange-100">
+                        <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-2">Assign Logistics Partner (Optional)</p>
+                        <select
+                          value={selectedLogisticsPartnerId}
+                          onChange={(e) => setSelectedLogisticsPartnerId(e.target.value)}
+                          className="w-full h-10 bg-white border border-orange-200 rounded-xl px-3 text-xs font-bold text-slate-700 outline-none appearance-none cursor-pointer"
+                        >
+                          <option value="">-- No logistics partner --</option>
+                          {logisticsPartners.map((lp: any) => (
+                            <option key={lp.id} value={lp.partner_id}>{lp.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <Button className="w-full bg-orange-500 hover:bg-orange-600 font-bold"
+                        onClick={() => handleDispatch(selectedOrder)} disabled={updateMutation.isPending}>
+                        <Truck className="h-4 w-4 mr-2" />
+                        {selectedLogisticsPartnerId ? "Dispatch & Assign Logistics" : "Mark as Dispatched"}
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* ── STEP 4: Dispatched — waiting for logistics to collect ── */}
+              {selectedOrder.status === "dispatched" && (
+                <div className="flex items-start gap-3 p-4 rounded-xl bg-orange-50 border border-orange-200">
+                  <Truck className="h-5 w-5 text-orange-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-black text-orange-800">Order Dispatched — Awaiting Collection by Delivery Partner</p>
+                    <p className="text-xs text-orange-600 mt-0.5">The delivery partner will mark as "Collected" once they pick up from your pharmacy.</p>
+                  </div>
+                </div>
+              )}
+
+              {/* ── STEP 5: Out for delivery ── */}
+              {selectedOrder.status === "out_for_delivery" && (
+                <div className="flex items-start gap-3 p-4 rounded-xl bg-sky-50 border border-sky-200">
+                  <Package className="h-5 w-5 text-sky-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-black text-sky-800">📦 Out for Delivery</p>
+                    <p className="text-xs text-sky-600 mt-0.5">Delivery partner has collected the order and is heading to the patient. Will mark delivered after code verification.</p>
+                  </div>
+                </div>
+              )}
+
+              {/* ── STEP 6: Completed ── */}
+              {selectedOrder.status === "completed" && (
+                <div className="flex items-start gap-3 p-4 rounded-xl bg-emerald-50 border border-emerald-200">
+                  <CheckCircle className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-black text-emerald-800">✅ Order Delivered Successfully</p>
+                    <p className="text-xs text-emerald-600 mt-0.5">Delivery code verified and order completed.</p>
+                  </div>
+                </div>
+              )}
+
             </div>
           )}
         </DialogContent>
       </Dialog>
+
     </div>
   );
 };

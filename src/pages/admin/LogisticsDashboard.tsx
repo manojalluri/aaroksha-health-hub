@@ -33,12 +33,23 @@ interface DeliveryOrder {
 
 // ─── Status helpers ────────────────────────────────────────────────────────────
 const statusStyle: Record<string, string> = {
-  pending:    "bg-amber-100 text-amber-700 border-amber-200",
-  confirmed:  "bg-blue-100 text-blue-700 border-blue-200",
-  dispatched: "bg-orange-100 text-orange-700 border-orange-200",
-  completed:  "bg-emerald-100 text-emerald-700 border-emerald-200",
-  collected:  "bg-violet-100 text-violet-700 border-violet-200",
-  processing: "bg-sky-100 text-sky-700 border-sky-200",
+  pending:           "bg-amber-100 text-amber-700 border-amber-200",
+  awaiting_payment:  "bg-violet-100 text-violet-700 border-violet-200",
+  dispatched:        "bg-orange-100 text-orange-700 border-orange-200",
+  out_for_delivery:  "bg-sky-100 text-sky-700 border-sky-200",
+  completed:         "bg-emerald-100 text-emerald-700 border-emerald-200",
+  collected:         "bg-violet-100 text-violet-700 border-violet-200",
+  confirmed:         "bg-blue-100 text-blue-700 border-blue-200",
+  processing:        "bg-sky-100 text-sky-700 border-sky-200",
+};
+
+const statusLabel: Record<string, string> = {
+  dispatched:       "Ready for Collection",
+  out_for_delivery: "Out for Delivery",
+  completed:        "Delivered",
+  confirmed:        "Confirmed",
+  collected:        "Sample Collected",
+  processing:       "Processing",
 };
 
 const LogisticsDashboard = () => {
@@ -132,12 +143,12 @@ const LogisticsDashboard = () => {
         .from("prescriptions")
         .select("*")
         .eq("logistics_partner_id", partner.partner_id)
-        .in("status", ["reviewed", "dispatched", "completed"])
+        .in("status", ["dispatched", "out_for_delivery", "completed"])
         .order("created_at", { ascending: false });
       if (error) throw error;
       return (data || []).map(d => ({ ...d, type: 'prescription' })) as DeliveryOrder[];
     },
-    refetchInterval: 60000,
+    refetchInterval: 30000,
   });
 
   const { data: labBookings = [], isLoading: loadingLab } = useQuery<DeliveryOrder[]>({
@@ -211,24 +222,18 @@ const LogisticsDashboard = () => {
 
   const handleVerifyOtp = () => {
     if (!verifyingOrder) return;
-    
-    // Check if OTP matches
     const correctCode = verifyingOrder.delivery_code;
-    
     if (!correctCode) {
-      // If for some reason the order doesn't have a code in DB (old order), just allow it or handle it.
-      // We will allow it but warn.
-      toast.warning("No code found for this order, completing directly.");
+      toast.warning("No code found for this order. Completing directly.");
       updateMutation.mutate({ id: verifyingOrder.id, status: verifyingOrder.type === 'lab' ? 'collected' : 'completed', type: verifyingOrder.type });
-      setVerifyingOrder(null);
-      setOtpInput("");
+      setVerifyingOrder(null); setOtpInput("");
       return;
     }
-
     if (otpInput.trim().toUpperCase() === correctCode.toUpperCase()) {
+      // For pharmacy: code verified → completed. For lab: code verified → collected.
       updateMutation.mutate({ id: verifyingOrder.id, status: verifyingOrder.type === 'lab' ? 'collected' : 'completed', type: verifyingOrder.type });
-      setVerifyingOrder(null);
-      setOtpInput("");
+      toast.success(verifyingOrder.type === 'lab' ? 'Sample collected!' : 'Delivery verified & completed!');
+      setVerifyingOrder(null); setOtpInput("");
     } else {
       toast.error("Invalid verification code. Please check with the patient.");
     }
@@ -483,32 +488,48 @@ const LogisticsDashboard = () => {
                          {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                        </TableCell>
                        <TableCell className="text-right">
-                         <div className="flex justify-end gap-2">
-                           {order.status !== 'completed' && order.status !== 'collected' && order.status !== 'cancelled' && (
-                              <button 
-                                onClick={() => {
-                                  setVerifyingOrder(order);
-                                  setOtpInput("");
-                                }}
-                                className="h-8 px-3 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 text-xs font-bold transition-all"
+                          <div className="flex justify-end gap-2">
+                            {/* Step: dispatched → Mark as Collected (picked up from pharmacy) */}
+                            {order.status === 'dispatched' && (
+                              <button
+                                onClick={() => updateMutation.mutate({ id: order.id, status: 'out_for_delivery', type: order.type })}
+                                className="h-8 px-3 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-100 text-xs font-bold transition-all"
                               >
-                                Verify & {order.type === 'lab' ? 'Collect' : 'Deliver'}
+                                Mark Collected
                               </button>
-                           )}
-                           <a 
-                                href={`tel:${order.patient_phone}`}
-                                className="h-8 w-8 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 flex items-center justify-center transition-all"
-                              >
-                              <Phone className="h-4 w-4" />
-                            </a>
-                            <button 
-                                onClick={() => setSelectedOrder(order)}
-                                className="h-8 w-8 rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center transition-all"
-                              >
-                             <MapPin className="h-4 w-4" />
-                           </button>
-                         </div>
-                       </TableCell>
+                            )}
+                            {/* Step: out_for_delivery → Verify code & mark Delivered */}
+                            {order.status === 'out_for_delivery' && (
+                               <button 
+                                 onClick={() => { setVerifyingOrder(order); setOtpInput(""); }}
+                                 className="h-8 px-3 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 text-xs font-bold transition-all"
+                               >
+                                 Verify & Deliver
+                               </button>
+                            )}
+                            {/* Lab: confirm → collect */}
+                            {order.type === 'lab' && order.status !== 'completed' && order.status !== 'collected' && order.status !== 'dispatched' && order.status !== 'out_for_delivery' && (
+                               <button 
+                                 onClick={() => { setVerifyingOrder(order); setOtpInput(""); }}
+                                 className="h-8 px-3 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 text-xs font-bold transition-all"
+                               >
+                                 Verify & Collect
+                               </button>
+                            )}
+                            <a 
+                                 href={`tel:${order.patient_phone}`}
+                                 className="h-8 w-8 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 flex items-center justify-center transition-all"
+                               >
+                               <Phone className="h-4 w-4" />
+                             </a>
+                             <button 
+                                 onClick={() => setSelectedOrder(order)}
+                                 className="h-8 w-8 rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center transition-all"
+                               >
+                              <MapPin className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </TableCell>
                      </TableRow>
                    ))}
                  </TableBody>
@@ -548,12 +569,39 @@ const LogisticsDashboard = () => {
                         onClick={() => setSelectedOrder(order)}
                         className="h-10 w-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center border border-slate-200 shadow-sm"
                       >
+                             {order.status !== 'completed' && order.status !== 'collected' && order.status !== 'cancelled' && (
+                        <>
+                          {/* Step 1: Collected from pharmacy */}
+                          {order.status === 'dispatched' && (
+                            <button 
+                              onClick={() => updateMutation.mutate({ id: order.id, status: 'out_for_delivery', type: order.type })}
+                              className="flex-1 h-10 px-4 rounded-xl bg-orange-500 text-white font-black text-xs shadow-lg shadow-orange-100 transition-all active:scale-95"
+                            >
+                              Mark Collected from Pharmacy
+                            </button>
+                          )}
+                          {/* Step 2: Verify code & deliver */}
+                          {order.status === 'out_for_delivery' && (
+                            <button 
+                              onClick={() => { setVerifyingOrder(order); setOtpInput(""); }}
+                              className="flex-1 h-10 px-4 rounded-xl bg-emerald-500 text-white font-black text-xs shadow-lg shadow-emerald-100 transition-all active:scale-95"
+                            >
+                              Verify Code & Mark Delivered
+                            </button>
+                          )}
+                          {/* Lab collect */}
+                          {order.type === 'lab' && order.status !== 'dispatched' && order.status !== 'out_for_delivery' && (
+                            <button 
+                              onClick={() => { setVerifyingOrder(order); setOtpInput(""); }}
+                              className="flex-1 h-10 px-4 rounded-xl bg-emerald-500 text-white font-black text-xs shadow-lg shadow-emerald-100 transition-all active:scale-95"
+                            >
+                              Verify & Collect
+                            </button>
+                          )}
+                        </>
+                      )}
                         <MapPin className="h-5 w-5" />
                       </button>
-                      {order.status !== 'completed' && order.status !== 'collected' && order.status !== 'cancelled' && (
-                        <button 
-                          onClick={() => {
-                            setVerifyingOrder(order);
                             setOtpInput("");
                           }}
                           className="flex-1 h-10 px-4 rounded-xl bg-emerald-500 text-white font-black text-xs shadow-lg shadow-emerald-100 transition-all active:scale-95"
