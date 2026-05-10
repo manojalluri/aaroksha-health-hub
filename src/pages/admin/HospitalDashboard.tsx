@@ -161,12 +161,12 @@ const HospitalDashboard = () => {
 
   const [newDoctor, setNewDoctor] = useState<Partial<Doctor>>({
     name: "", specialty: "", qualification: "MBBS", experience: 0,
-    rating: 4.8, fee: 500, image: "ðŸ‘¨â€âš•ï¸", available: true,
+    rating: 4.8, fee: 500, image: "👨‍⚕️", available: true,
     phone: "", languages: "Telugu, English",
   });
   const [uploadingImage, setUploadingImage] = useState(false);
 
-  // â”€â”€â”€ Fetch doctors (only this hospital's doctors) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ——— Fetch doctors (only this hospital's doctors) ————————————————————————
   const { data: doctors = [], isLoading: loadingDocs } = useQuery<Doctor[]>({
     queryKey: ["hospital-doctors", partnerId],
     enabled: !!partnerId,
@@ -181,15 +181,17 @@ const HospitalDashboard = () => {
     },
   });
 
-  // â”€â”€â”€ Fetch appointments (only this hospital's appointments) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Fetch appointments (only this hospital's appointments) ──────────────────
   const { data: appointments = [], isLoading: loadingAppts } = useQuery<Appointment[]>({
-    queryKey: ["hospital-appointments", partnerId],
+    queryKey: ["hospital-appointments", partnerId, partner?.created_at],
     enabled: !!partnerId,
     queryFn: async () => {
+      const since = partner?.created_at || new Date(0).toISOString();
       const { data, error } = await supabase
         .from("appointments")
         .select("*")
         .eq("hospital_partner_id", partnerId!)
+        .gte("created_at", since)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return (data || []) as Appointment[];

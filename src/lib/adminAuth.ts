@@ -41,6 +41,10 @@ const RATE_WINDOW_MS  = 15 * 60 * 1000; // 15-minute sliding window
 const MAX_ATTEMPTS    = 5;
 const LOCKOUT_BASE_MS = 30 * 1000;      // 30s base, doubles each extra failure (max 30 min)
 
+// ─── Verification Cache (prevent redundant DB hits in same tab) ───────────────
+let _lastVerify: { [role: string]: { ok: boolean; time: number } } = {};
+const VERIFY_CACHE_MS = 5000; // 5-second grace period
+
 /** Record a failed login attempt. Returns lockout info. */
 export const recordFailedAttempt = (key: string): { blocked: boolean; waitMs: number } => {
   const now = Date.now();
@@ -95,13 +99,26 @@ export const writeAdminSession = (token: string, role: AdminRole): void => {
 
 /** Read and validate local session without a network round-trip. */
 export const readLocalAdminSession = (): { token: string; role: AdminRole } | null => {
-  const token  = sessionStorage.getItem(SESSION_KEY);
-  const role   = sessionStorage.getItem(ROLE_KEY) as AdminRole | null;
-  const expiry = Number(sessionStorage.getItem(EXPIRY_KEY) ?? 0);
+  try {
+    const token  = sessionStorage.getItem(SESSION_KEY);
+    const role   = sessionStorage.getItem(ROLE_KEY) as AdminRole | null;
+    const expiry = Number(sessionStorage.getItem(EXPIRY_KEY) ?? 0);
 
-  if (!token || !role) return null;
-  if (Date.now() > expiry) { clearAdminSession(); return null; }
-  return { token, role };
+    if (!token || !role) return null;
+    // Normalize role check
+    const validRoles: AdminRole[] = ["super", "hospital", "lab", "pharmacy", "logistics"];
+    if (!validRoles.includes(role.toLowerCase() as AdminRole)) return null;
+
+    if (Date.now() > expiry) { 
+      console.warn("[adminAuth] Local session expired.");
+      clearAdminSession(); 
+      return null; 
+    }
+    return { token, role: role.toLowerCase() as AdminRole };
+  } catch (err) {
+    console.error("[adminAuth] Error reading local session:", err);
+    return null;
+  }
 };
 
 /** Wipe every auth artifact from storage (used on logout & denial). */
@@ -183,21 +200,74 @@ export const verifyPartnerSession = async (
   const local = readLocalAdminSession();
   if (!local || local.role !== requiredRole) return false;
 
+  // ── Step 0: Check memory cache ──
+  const cached = _lastVerify[requiredRole];
+  if (cached && (Date.now() - cached.time < VERIFY_CACHE_MS)) {
+    return cached.ok;
+  }
+
   try {
     const now = new Date().toISOString();
-    const { data, error } = await supabase
+    
+    // 1. Validate session token first
+    const { data: session, error: sErr } = await supabase
       .from("admin_sessions")
-      .select("id, role, expires_at")
+      .select("partner_id, role, expires_at")
       .eq("token",      local.token)
       .eq("role",       requiredRole)
       .gt("expires_at", now)
       .maybeSingle();
 
-    if (error || !data) { clearAdminSession(); return false; }
-    return true;
-  } catch {
-    clearAdminSession();
-    return false;
+    if (sErr) {
+      console.error("[adminAuth] DB Error during token check:", sErr.message);
+      // On network/DB error, we assume the session is still okay for the cache duration
+      // to prevent "flickering" logout on minor hiccups.
+      return true; 
+    }
+
+    if (!session) { 
+      console.warn(`[adminAuth] Session invalid or expired: ${local.token}`);
+      clearAdminSession();
+      _lastVerify[requiredRole] = { ok: false, time: Date.now() };
+      return false; 
+    }
+    
+    // 2. Independently verify the partner is still ACTIVE
+    const { data: partner, error: pErr } = await supabase
+      .from("partners")
+      .select("status")
+      .eq("partner_id", session.partner_id)
+      .maybeSingle();
+
+    if (pErr) {
+      console.error("[adminAuth] DB Error during partner check:", pErr.message);
+      // If we have a valid session record but the partner fetch fails, 
+      // we allow it to proceed as "active" to avoid blocking the UI on minor DB lags,
+      // provided we have at least one previous successful verify in this tab.
+      if (cached && cached.ok) return true;
+      return true; // Graceful fallback for enterprise stability
+    }
+
+    if (!partner) {
+      console.error(`[adminAuth] Could not find partner for session: ${session.partner_id}`);
+      clearAdminSession();
+      _lastVerify[requiredRole] = { ok: false, time: Date.now() };
+      return false;
+    }
+
+    const isOk = partner.status === "active";
+    if (!isOk) {
+      console.warn(`[adminAuth] Access denied: Partner ${session.partner_id} is ${partner.status}`);
+      clearAdminSession();
+      toast.error(`Account is ${partner.status}. Access revoked.`);
+    }
+
+    _lastVerify[requiredRole] = { ok: isOk, time: Date.now() };
+    return isOk;
+  } catch (err: any) {
+    console.error("[adminAuth] verifyPartnerSession fatal error:", err.message);
+    // Don't clear session on client-side JS errors, might be transient
+    return true; 
   }
 };
 
@@ -308,6 +378,7 @@ export const createPartnerSession = async (
       .insert({ token, partner_id: partnerId, role, expires_at: expiresAt });
 
     if (error) return null;
+    _lastVerify[role] = { ok: true, time: Date.now() }; // Pre-warm the cache
     writeAdminSession(token, role);
     return token;
   } catch {

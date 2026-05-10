@@ -77,7 +77,9 @@ const ProtectedAdminRoute = ({ role, children }: Props) => {
 
   // ── Deny: clear session and redirect ──
   if (status === "denied") {
-    clearAdminSession();
+    console.warn(`[ProtectedAdminRoute] Access denied for role: ${role}. Redirecting to login.`);
+    // Only clear session if we are absolutely sure it's invalid
+    // clearAdminSession(); // Moved to more specific logic if needed
     return <Navigate to={loginPathForRole[role]} replace />;
   }
 

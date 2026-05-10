@@ -134,14 +134,19 @@ const PharmacyDashboard = () => {
 
   // ─── Fetch prescriptions from Supabase ───────────────────────────────────
   const { data: orders = [], isLoading } = useQuery<PrescriptionOrder[]>({
-    queryKey: ["pharmacy-prescriptions", partner?.partner_id],
+    queryKey: ["pharmacy-prescriptions", partner?.partner_id, partner?.created_at],
     enabled: !!partner?.partner_id,
     queryFn: async () => {
       const pid = partner?.partner_id;
-      // Fetch all to ensure sync, then filter in JS to avoid complex .or() syntax issues
+      // Security: Only show orders created AFTER this partner was added to the platform
+      // to ensure fresh account state if a partner is recreated.
+      const since = partner?.created_at || new Date(0).toISOString();
+
       const { data, error } = await supabase
         .from("prescriptions")
         .select("*")
+        .or(`partner_id.eq.${pid},status.eq.pending`)
+        .gte("created_at", since)
         .order("created_at", { ascending: false });
       
       if (error) {

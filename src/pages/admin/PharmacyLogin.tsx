@@ -16,7 +16,14 @@ const PharmacyLogin = () => {
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    checkIsLoggedIn("pharmacy").then(ok => { if (ok) navigate("/admin/pharmacy"); });
+    let active = true;
+    checkIsLoggedIn("pharmacy").then(ok => { 
+      if (ok && active) {
+        console.log("[PharmacyLogin] Already logged in, redirecting to dashboard...");
+        navigate("/admin/pharmacy", { replace: true }); 
+      }
+    });
+    return () => { active = false; };
   }, [navigate]);
   useEffect(() => () => { if (countdownRef.current) clearInterval(countdownRef.current); }, []);
 

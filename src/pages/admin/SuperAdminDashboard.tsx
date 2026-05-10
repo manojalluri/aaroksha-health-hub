@@ -13,7 +13,9 @@ import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Banner, getBanners, saveBanners } from "@/lib/bannersSync";
+import { getLocalDoctors } from "@/lib/doctorsSync";
 import { getSettings, saveSettingsLocally, saveSettingsToSupabase, syncSettingsFromSupabase } from "@/lib/settingsSync";
+import { logActivity } from "@/lib/audit";
 import { useNavigate } from "react-router-dom";
 import { verifySuperAdminSession, clearAdminSession } from "@/lib/adminAuth";
 
@@ -102,12 +104,20 @@ interface Partner {
   password: string;
   phone?: string;
   address?: string;
+  logo_url?: string;
   commission_type: "percentage" | "fixed";
   commission_rate: number;
   partner_id: string;
   category?: "lab" | "pharmacy";
-  status: "active" | "inactive";
+  status: "active" | "hold" | "deleted";
+  settings?: {
+    services?: string[];
+    timings?: string;
+    description?: string;
+    [key: string]: any;
+  };
   created_at?: string;
+  updated_at?: string;
 }
 
 type LookupResult = (Appointment | LabBooking | Prescription) & { _type: "opd" | "lab" | "med" };
@@ -124,13 +134,13 @@ const genPassword = () => {
 };
 
 const genPartnerId = (type: string) =>
-  `${type.toUpperCase()}_${Date.now().toString(36).toUpperCase()}`;
+  `${type.toUpperCase()}_${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
-const TYPE_META: Record<string, { icon: React.ReactNode; color: string; bg: string; border: string; label: string; route: string }> = {
-  hospital: { icon: <Building2 className="h-4 w-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", label: "Hospital", route: "/admin/hospital" },
-  lab:      { icon: <FlaskConical className="h-4 w-4" />, color: "text-violet-600", bg: "bg-violet-50", border: "border-violet-200", label: "Lab", route: "/admin/lab" },
-  pharmacy: { icon: <Pill className="h-4 w-4" />, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-200", label: "Pharmacy", route: "/admin/pharmacy" },
-  logistics:{ icon: <Truck className="h-4 w-4" />, color: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-200", label: "Logistics", route: "/admin/logistics" },
+const TYPE_META: Record<string, { icon: React.ReactNode; color: string; bg: string; border: string; label: string; route: string; shadow: string }> = {
+  hospital: { icon: <Building2 className="h-4 w-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", shadow: "shadow-blue-100", label: "Hospital", route: "/admin/hospital" },
+  lab:      { icon: <FlaskConical className="h-4 w-4" />, color: "text-violet-600", bg: "bg-violet-50", border: "border-violet-200", shadow: "shadow-violet-100", label: "Lab", route: "/admin/lab" },
+  pharmacy: { icon: <Pill className="h-4 w-4" />, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-200", shadow: "shadow-emerald-100", label: "Pharmacy", route: "/admin/pharmacy" },
+  logistics:{ icon: <Truck className="h-4 w-4" />, color: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-200", shadow: "shadow-indigo-100", label: "Logistics", route: "/admin/logistics" },
 };
 
 const COMMISSION_DEFAULTS: Record<string, number> = { hospital: 10, lab: 18, pharmacy: 15, logistics: 30 };
@@ -243,11 +253,18 @@ const SuperAdminDashboard = () => {
   const [newPartner, setNewPartner] = useState({
     name: "", type: "hospital" as "hospital" | "lab" | "pharmacy" | "logistics",
     email: "", password: genPassword(), phone: "", address: "",
+    logo_url: "",
     commission_type: "percentage" as "percentage" | "fixed",
     commission_rate: 10,
     settlement_cycle: "monthly" as "today" | "daily" | "weekly" | "monthly",
-    category: "pharmacy" as "lab" | "pharmacy"
+    category: "pharmacy" as "lab" | "pharmacy",
+    settings: {
+      services: [] as string[],
+      timings: "",
+      description: ""
+    }
   });
+  const [partnerFilter, setPartnerFilter] = useState<"all" | "active" | "hold" | "deleted">("all");
   
   const [toggles, setToggles] = useState(getSettings());
   
@@ -565,8 +582,6 @@ const SuperAdminDashboard = () => {
   };
 
   const getPartnerPlatformFees = (p: Partner, txnCount: number) => {
-    // In our new standardized logic, we show 'earned' as the product subtotal.
-    // The 'platform fees' row in Super Admin Payouts should represent the total platform fees collected per partner.
     if (p.type === 'hospital') return txnCount * (toggles?.opd_fee || 29);
     if (p.type === 'lab') return txnCount * (toggles?.lab_fee || 49);
     if (p.type === 'pharmacy') return txnCount * (toggles?.pharm_fee || 19);
@@ -578,7 +593,6 @@ const SuperAdminDashboard = () => {
     return Math.round(getPartnerEarned(p) * (p.commission_rate / 100));
   };
   const totalCommission = partners.reduce((sum, p) => sum + getPartnerCommission(p), 0);
-
   // ─── Add Partner Handler ───────────────────────────────────────────────────
   const handleAddPartner = async () => {
     const dataToSave = editingPartner || newPartner;
@@ -595,12 +609,14 @@ const SuperAdminDashboard = () => {
         plain_password: dataToSave.password,
         phone: dataToSave.phone, 
         address: dataToSave.address,
+        logo_url: dataToSave.logo_url,
         commission_type: dataToSave.commission_type,
         commission_rate: dataToSave.commission_rate,
         settlement_cycle: dataToSave.settlement_cycle || "monthly",
         category: dataToSave.type === "logistics" ? dataToSave.category : null,
         partner_id: partnerId, 
-        status: "active",
+        status: editingPartner ? editingPartner.status : "active",
+        settings: dataToSave.settings || {},
         created_at: editingPartner ? editingPartner.created_at : new Date().toISOString(),
       };
 
@@ -615,26 +631,76 @@ const SuperAdminDashboard = () => {
 
       if (error) throw error;
 
+      await logActivity({
+        actor_id: 'super_admin',
+        action: editingPartner ? 'PARTNER_UPDATED' : 'PARTNER_CREATED',
+        entity_type: 'partner',
+        entity_id: partnerId,
+        details: { name: partnerData.name, type: partnerData.type }
+      });
+
       toast.success(editingPartner ? "Partner updated successfully!" : `✅ ${newPartner.name} added successfully! Partner ID: ${partnerId}`);
       setShowAddPartner(false);
       setEditingPartner(null);
-      setNewPartner({ name: "", type: "hospital", email: "", password: genPassword(), phone: "", address: "", commission_type: "percentage", commission_rate: 10, settlement_cycle: "monthly", category: "pharmacy" });
+      setNewPartner({ 
+        name: "", type: "hospital", email: "", password: genPassword(), phone: "", address: "", logo_url: "",
+        commission_type: "percentage", commission_rate: 10, settlement_cycle: "monthly", category: "pharmacy",
+        settings: { services: [], timings: "", description: "" }
+      });
       refetchPartners();
     } catch (err: any) {
       console.error("Error saving partner:", err);
-      toast.error(err.message || "Failed to save partner. Make sure to run the SQL script provided.");
+      toast.error(err.message || "Failed to save partner.");
     } finally {
       setAddLoading(false);
     }
   };
 
-  const handleDeletePartner = async (p: any) => {
-    const confirmMsg = `Are you sure you want to PERMANENTLY delete ${p.name}? \n\nThis will remove their dashboard access and settlement history. Linked records (doctors, tests) will be orphaned.`;
+  const handleUpdateStatus = async (p: Partner, newStatus: "active" | "hold" | "deleted") => {
+    let confirmMsg = "";
+    if (newStatus === "deleted") {
+      confirmMsg = `Are you sure you want to delete ${p.name}? This will hide them from customers and disable their portal. History will be preserved.`;
+    } else if (newStatus === "hold") {
+      confirmMsg = `Are you sure you want to put ${p.name} on HOLD? They will be invisible to customers but can still be managed.`;
+    } else {
+      confirmMsg = `Reactivate ${p.name}? They will become visible to customers again.`;
+    }
+
     if (!window.confirm(confirmMsg)) return;
 
     try {
+      const { error } = await supabase
+        .from("partners")
+        .update({ status: newStatus })
+        .eq("id", p.id);
+      
+      if (error) throw error;
+      
+      await logActivity({
+        actor_id: 'super_admin',
+        action: 'STATUS_CHANGE',
+        entity_type: 'partner',
+        entity_id: p.partner_id,
+        details: { from: p.status, to: newStatus, name: p.name }
+      });
+      
+      toast.success(`${p.name} is now ${newStatus.toUpperCase()}`);
+      refetchPartners();
+    } catch (err: any) {
+      toast.error("Status update failed: " + err.message);
+    }
+  };
+
+  const handleDeletePartner = async (p: Partner) => {
+    handleUpdateStatus(p, "deleted");
+  };
+  const handleHardDeletePartner = async (p: Partner) => {
+    const confirmMsg = `⚠️ DANGER: PERMANENTLY hard delete ${p.name}? \n\nThis will remove their profile and linked metadata (doctors, tests). Order history will be orphaned but preserved. This action CANNOT be undone.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      setAddLoading(true);
       // 1. First, nullify references in dependent tables to avoid FK violations
-      // This is the most comprehensive cleanup to ensure no record blocks the delete
       await supabase.from("doctors").update({ hospital_id: null, partner_id: null }).eq("hospital_id", p.partner_id);
       await supabase.from("doctors").update({ hospital_id: null, partner_id: null }).eq("partner_id", p.partner_id);
       await supabase.from("appointments").update({ hospital_partner_id: null, partner_id: null }).eq("hospital_partner_id", p.partner_id);
@@ -645,11 +711,22 @@ const SuperAdminDashboard = () => {
       // 2. Now delete the partner
       const { error } = await supabase.from("partners").delete().eq("id", p.id);
       if (error) throw error;
-      toast.success(`Partner ${p.name} removed successfully`);
+      
+      await logActivity({
+        actor_id: 'super_admin',
+        action: 'HARD_DELETE',
+        entity_type: 'partner',
+        entity_id: p.partner_id,
+        details: { name: p.name, type: p.type }
+      });
+      
+      toast.success(`Partner ${p.name} hard deleted successfully`);
       refetchPartners();
     } catch (err: any) {
-      console.error("Delete Partner Error:", err);
-      toast.error(err.message || "Failed to remove partner. Check for active appointments or bookings first.");
+      console.error("Hard Delete Partner Error:", err);
+      toast.error(err.message || "Failed to remove partner.");
+    } finally {
+      setAddLoading(false);
     }
   };
 
@@ -1567,9 +1644,25 @@ const SuperAdminDashboard = () => {
             <div className="space-y-5">
               <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                 <div className="px-6 py-4 border-b border-slate-50 flex items-center justify-between">
-                  <div>
-                    <h3 className="font-black text-slate-900">All Partners</h3>
-                    <p className="text-xs text-slate-400">{partners.length} registered partners</p>
+                  <div className="flex items-center gap-6">
+                    <div>
+                      <h3 className="font-black text-slate-900">All Partners</h3>
+                      <p className="text-xs text-slate-400">{partners.length} registered partners</p>
+                    </div>
+                    {/* Status Filters */}
+                    <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
+                      {(["all", "active", "hold", "deleted"] as const).map(s => (
+                        <button 
+                          key={s}
+                          onClick={() => setPartnerFilter(s)}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                            partnerFilter === s ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+                          }`}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   <button onClick={() => downloadCSV(partners, "Aaroksha_Partners", [
                     { header: "Partner Name", key: "name" },
@@ -1583,10 +1676,12 @@ const SuperAdminDashboard = () => {
                   </button>
                 </div>
                 <div className="divide-y divide-slate-50">
-                  {partners.map(partner => {
+                  {partners
+                    .filter(p => partnerFilter === "all" ? p.status !== "deleted" : p.status === partnerFilter)
+                    .map(partner => {
                     const meta = TYPE_META[partner.type];
                     return (
-                      <div key={partner.id} className="px-6 py-4 flex items-center gap-4 hover:bg-slate-50/50 transition-colors">
+                      <div key={partner.id} className={`px-6 py-4 flex items-center gap-4 hover:bg-slate-50/50 transition-colors ${partner.status === "hold" ? "bg-amber-50/20" : partner.status === "deleted" ? "opacity-60 bg-slate-50" : ""}`}>
                         <div className={`h-10 w-10 ${meta.bg} rounded-xl flex items-center justify-center ${meta.color} shrink-0`}>
                           {meta.icon}
                         </div>
@@ -1594,7 +1689,13 @@ const SuperAdminDashboard = () => {
                           <div className="flex items-center gap-2">
                             <p className="font-bold text-slate-900 text-sm">{partner.name}</p>
                             <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${meta.bg} ${meta.color}`}>{meta.label}</span>
-                            <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${partner.status === "active" ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-500"}`}>{partner.status}</span>
+                            <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
+                              partner.status === "active" ? "bg-emerald-50 text-emerald-600" : 
+                              partner.status === "hold" ? "bg-amber-100 text-amber-700" : 
+                              "bg-slate-200 text-slate-600"
+                            }`}>
+                              {partner.status}
+                            </span>
                           </div>
                           <p className="text-xs text-slate-400 mt-0.5">{partner.email} · Commission: {partner.commission_type === "fixed" ? `₹${partner.commission_rate}/txn` : `${partner.commission_rate}%`}</p>
                         </div>
@@ -1603,22 +1704,58 @@ const SuperAdminDashboard = () => {
                           <p className="text-[10px] text-slate-300">{partner.phone || "No phone"}</p>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          <a href={meta.route} target="_blank" rel="noreferrer"
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold ${meta.bg} ${meta.color} hover:opacity-80 transition-all`}>
-                            <ArrowUpRight className="h-3 w-3" /> Portal
-                          </a>
+                          {partner.status !== "deleted" && (
+                            <a href={meta.route} target="_blank" rel="noreferrer"
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold ${meta.bg} ${meta.color} hover:opacity-80 transition-all`}>
+                              <ArrowUpRight className="h-3 w-3" /> Portal
+                            </a>
+                          )}
+                          
+                          {partner.status !== "deleted" && (
+                            <button 
+                              onClick={() => handleUpdateStatus(partner, partner.status === "active" ? "hold" : "active")}
+                              title={partner.status === "active" ? "Put on Hold" : "Reactivate"}
+                              className={`p-1.5 rounded-lg transition-all ${partner.status === "active" ? "text-amber-500 hover:bg-amber-50" : "text-emerald-500 hover:bg-emerald-50"}`}
+                            >
+                              {partner.status === "active" ? <Ban className="h-3.5 w-3.5" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                            </button>
+                          )}
+
                           <button onClick={() => { setEditingPartner(partner); setShowAddPartner(true); }}
                             className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all">
                             <Edit2 className="h-3.5 w-3.5" />
                           </button>
-                          <button onClick={() => handleDeletePartner(partner)}
-                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+
+                          {partner.status === "deleted" ? (
+                             <button onClick={() => handleUpdateStatus(partner, "active")}
+                             title="Restore Partner"
+                             className="p-1.5 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-all">
+                             <RefreshCw className="h-3.5 w-3.5" />
+                           </button>
+                          ) : (
+                            <button onClick={() => handleDeletePartner(partner)}
+                              title="Soft Delete"
+                              className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+
+                          {partner.status === "deleted" && (
+                             <button onClick={() => handleHardDeletePartner(partner)}
+                             title="PERMANENT Hard Delete"
+                             className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-100 rounded-lg transition-all">
+                             <Trash2 className="h-3.5 w-3.5" />
+                           </button>
+                          )}
                         </div>
                       </div>
                     );
                   })}
+                  {partners.filter(p => partnerFilter === "all" ? p.status !== "deleted" : p.status === partnerFilter).length === 0 && (
+                    <div className="px-6 py-12 text-center text-slate-400 font-bold text-sm">
+                      No {partnerFilter === "all" ? "" : partnerFilter} partners found.
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -2744,6 +2881,7 @@ const SuperAdminDashboard = () => {
               {/* Fields */}
               {[
                 { label: "Partner / Hospital Name *", key: "name", type: "text", placeholder: "e.g. Apollo Hospital Banjara Hills" },
+                { label: "Logo URL (Image Link)", key: "logo_url", type: "url", placeholder: "https://example.com/logo.png" },
                 { label: "Admin Login Email *", key: "email", type: "email", placeholder: "hospital@aaroksha.com" },
                 { label: "Phone", key: "phone", type: "tel", placeholder: "+91 98765 43210" },
                 { label: "Address / Location", key: "address", type: "text", placeholder: "City, State" },
@@ -2759,6 +2897,31 @@ const SuperAdminDashboard = () => {
                     className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition-all" />
                 </div>
               ))}
+
+              {/* Advanced Settings (Services/Timings) */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1.5">Services (Comma Separated)</label>
+                  <input type="text" placeholder="e.g. ICU, Emergency"
+                    value={editingPartner ? (editingPartner.settings?.services?.join(", ") || "") : (newPartner.settings.services.join(", "))}
+                    onChange={e => {
+                      const tags = e.target.value.split(",").map(t => t.trim()).filter(t => t);
+                      if (editingPartner) setEditingPartner({ ...editingPartner, settings: { ...editingPartner.settings, services: tags } });
+                      else setNewPartner(p => ({ ...p, settings: { ...p.settings, services: tags } }));
+                    }}
+                    className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm text-slate-700 outline-none focus:border-blue-300 transition-all" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1.5">Working Timings</label>
+                  <input type="text" placeholder="e.g. 24/7 or 9AM-9PM"
+                    value={editingPartner ? (editingPartner.settings?.timings || "") : (newPartner.settings.timings)}
+                    onChange={e => {
+                      if (editingPartner) setEditingPartner({ ...editingPartner, settings: { ...editingPartner.settings, timings: e.target.value } });
+                      else setNewPartner(p => ({ ...p, settings: { ...p.settings, timings: e.target.value } }));
+                    }}
+                    className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm text-slate-700 outline-none focus:border-blue-300 transition-all" />
+                </div>
+              </div>
 
               {/* Password */}
               <div>

@@ -447,28 +447,23 @@ const LabDashboard = () => {
 
   // ── Fetch bookings ──────────────────────────────────────────────────────────
   const { data: bookings_raw, isLoading: isBookingsLoading } = useQuery<LabBooking[]>({
-    queryKey: ["admin-lab-bookings"],
+    queryKey: ["admin-lab-bookings", partner?.partner_id, partner?.created_at],
+    enabled: !!partner?.partner_id,
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      let pId = user?.user_metadata?.partner_id;
+      const pid = partner?.partner_id;
+      const since = partner?.created_at || new Date(0).toISOString();
 
-      // Also try from sessionStorage (set by createPartnerSession)
-      if (!pId) {
-        const token = sessionStorage.getItem("aaroksha_admin_token");
-        if (token && partnerId) pId = partnerId;
-      }
-      
-      let query = supabase.from("lab_bookings").select("*").order("created_at", { ascending: false });
-      if (pId && !pId.includes("SEED")) {
-        // Show bookings assigned to this partner OR unassigned ones that need review
-        query = query.or(`partner_id.eq.${pId},partner_id.is.null`);
-      }
-      
-      const { data, error } = await query;
+      const { data, error } = await supabase
+        .from("lab_bookings")
+        .select("*")
+        .eq("partner_id", pid)
+        .gte("created_at", since)
+        .order("created_at", { ascending: false });
+
       if (error) throw error;
-      return (data || []) as LabBooking[];
+      return data as LabBooking[];
     },
-    retry: false,
+    refetchInterval: 30000,
   });
   const bookings = (Array.isArray(bookings_raw) ? bookings_raw : []) as LabBooking[];
 

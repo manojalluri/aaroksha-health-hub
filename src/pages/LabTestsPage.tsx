@@ -126,7 +126,21 @@ const LabTestsPage = () => {
   const { data: labTests = [], isLoading } = useQuery<LabTest[]>({
     queryKey: ["lab-tests"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("lab_tests").select("*");
+      // 1. Get all active partners of type lab
+      const { data: activeLabs } = await supabase
+        .from("partners")
+        .select("partner_id")
+        .eq("type", "lab")
+        .eq("status", "active");
+      
+      const activeIds = (activeLabs || []).map(p => p.partner_id);
+
+      // 2. Fetch tests for these active partners
+      const { data, error } = await supabase
+        .from("lab_tests")
+        .select("*")
+        .in("partner_id", activeIds);
+
       if (error) throw error;
       return (data || []) as LabTest[];
     },
@@ -228,6 +242,8 @@ const LabTestsPage = () => {
     try {
       // 1. Create initial 'pending' record in Supabase
       const newOrderId = genOrderId("LAB");
+      const firstTestPartnerId = cart[0]?.test?.partner_id || null;
+
       const { data: booking, error } = await supabase.from("lab_bookings").insert({
         order_id: newOrderId,
         patient_name: patient.name,
@@ -243,6 +259,7 @@ const LabTestsPage = () => {
         status: "pending",
         payment_status: "pending",
         user_id: user?.id || null,
+        partner_id: firstTestPartnerId, // Mapped to the lab partner
       }).select().single();
       setConfirmedOrderId(newOrderId);
 

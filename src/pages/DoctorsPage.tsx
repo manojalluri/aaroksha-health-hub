@@ -58,7 +58,22 @@ const DoctorsPage = () => {
     queryKey: ["doctors"],
     queryFn: async () => {
       try {
-        const { data, error } = await supabase.from("doctors").select("*");
+        // 1. Get all active partners of type hospital
+        const { data: activePartners, error: pError } = await supabase
+          .from("partners")
+          .select("partner_id")
+          .eq("type", "hospital")
+          .eq("status", "active");
+        
+        if (pError) throw pError;
+        const activeIds = (activePartners || []).map(p => p.partner_id);
+
+        // 2. Fetch doctors for these active partners
+        const { data, error } = await supabase
+          .from("doctors")
+          .select("*")
+          .in("partner_id", activeIds);
+
         if (error) throw error;
         
         const local = getLocalDoctors() || [];
@@ -72,6 +87,7 @@ const DoctorsPage = () => {
         
         return [...data, ...missingLocal];
       } catch (err) {
+        console.error("Doctors fetch error:", err);
         return getLocalDoctors();
       }
     },

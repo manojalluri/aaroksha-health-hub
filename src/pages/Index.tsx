@@ -65,32 +65,39 @@ const Index = () => {
 
   useEffect(() => {
     const handleUpdate = () => {
-      supabase.from("doctors").select("*").then(({ data }) => {
-        const local = getLocalDoctors() || [];
-        if (!data || data.length === 0) {
-          setDoctors(local);
-          return;
-        }
+      // 1. Get active partners first
+      supabase.from("partners").select("partner_id").eq("status", "active").then(({ data: activePs }) => {
+        const activeIds = (activePs || []).map(p => p.partner_id);
         
-        // Merge offline local doctors
-        const dbIds = new Set(data.map(d => d.id));
-        const missingLocal = local.filter(d => !dbIds.has(d.id) && String(d.id).startsWith("local-"));
-        
-        setDoctors([...data, ...missingLocal]);
-      }).catch(() => setDoctors(getLocalDoctors()));
+        // 2. Fetch doctors for active partners
+        supabase.from("doctors").select("*").in("partner_id", activeIds).then(({ data }) => {
+          const local = getLocalDoctors() || [];
+          if (!data || data.length === 0) {
+            setDoctors(local);
+            return;
+          }
+          
+          // Merge offline local doctors
+          const dbIds = new Set(data.map(d => d.id));
+          const missingLocal = local.filter(d => !dbIds.has(d.id) && String(d.id).startsWith("local-"));
+          
+          setDoctors([...data, ...missingLocal]);
+        }).catch(() => setDoctors(getLocalDoctors()));
+      });
     };
     
     handleUpdate();
     window.addEventListener("doctors_updated", handleUpdate);
     
-    // Fetch Partner Hospitals
-    supabase.from("partners").select("*").eq("type", "hospital").then(({ data: ps }) => {
-      supabase.from("doctors").select("*").then(({ data: docs }) => {
+    // Fetch Active Partner Hospitals
+    supabase.from("partners").select("*").eq("type", "hospital").eq("status", "active").then(({ data: ps }) => {
+      const activeIds = (ps || []).map(p => p.partner_id);
+      supabase.from("doctors").select("*").in("partner_id", activeIds).then(({ data: docs }) => {
         if (ps && docs) {
           const withCounts = ps.map(h => {
              const docCount = docs.filter(d => d.partner_id === h.partner_id).length;
              return { ...h, docCount };
-          }).filter(h => h.docCount > 2);
+          }).filter(h => h.docCount > 0); // Show hospitals with at least 1 doc
           setHospitals(withCounts);
         }
       });
