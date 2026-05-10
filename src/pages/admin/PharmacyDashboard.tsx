@@ -262,7 +262,7 @@ const PharmacyDashboard = () => {
         admin_note: adminNote,
       },
     });
-    toast.success(`Pricing sent — Medicines: ₹${computedSubTotal.toLocaleString("en-IN")}. Order claimed.`);
+    toast.success(`Pricing sent. Order claimed.`);
   };
 
   const handleDispatch = (id: string) => {
