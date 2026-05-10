@@ -60,6 +60,7 @@ interface Doctor {
   time_slots: string[];   // times visible to patients when booking
   advance_days: number;   // how many days ahead patient can book
   holidays: string[];     // dates blocked as holidays (YYYY-MM-DD)
+  slot_capacity: number;  // max bookings per slot (default 10)
 }
 
 interface Appointment {
@@ -223,8 +224,11 @@ const HospitalDashboard = () => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["hospital-doctors", partnerId] });
       qc.invalidateQueries({ queryKey: ["doctors"] }); // refreshes customer DoctorsPage
-      setAddDialogOpen(false);
-      setNewDoctor({ name: "", specialty: "", qualification: "MBBS", experience: 0, rating: 4.8, fee: 500, image: "", available: true, phone: "", languages: "Telugu, English" });
+      setNewDoctor({ 
+        name: "", specialty: "", qualification: "MBBS", experience: 0, rating: 4.8, fee: 500, 
+        image: "👨‍⚕️", available: true, phone: "", languages: "Telugu, English",
+        slot_capacity: 10 
+      });
       toast.success("Doctor added - visible on customer page immediately");
     },
     onError: (e: any) => toast.error("Failed to add doctor: " + e.message),
@@ -1242,8 +1246,33 @@ const HospitalDashboard = () => {
                   </span>
                 </div>
                 <div className="flex justify-between text-[10px] text-violet-400 mt-1 font-bold">
-                  <span>1 day (same-day booking)</span>
-                  <span>30 days (1 month ahead)</span>
+                  <span>1 day (same-day)</span>
+                  <span>30 days (1 month)</span>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-blue-50 border border-blue-100">
+                <Label className="text-sm font-bold text-blue-800 mb-2 block">
+                  Slot Capacity (Bookings per Slot)
+                </Label>
+                <p className="text-xs text-blue-500 mb-3">
+                  Max number of patients allowed in a single time slot
+                </p>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min={1} max={50}
+                    value={slotDoctor.slot_capacity ?? 10}
+                    onChange={e => setSlotDoctor({ ...slotDoctor, slot_capacity: +e.target.value })}
+                    className="flex-1 accent-blue-600"
+                  />
+                  <span className="w-20 text-center bg-white border border-blue-200 rounded-xl py-1.5 text-sm font-black text-blue-700">
+                    {slotDoctor.slot_capacity ?? 10}
+                  </span>
+                </div>
+                <div className="flex justify-between text-[10px] text-blue-400 mt-1 font-bold">
+                  <span>1 (Single)</span>
+                  <span>50 (High Traffic)</span>
                 </div>
               </div>
 

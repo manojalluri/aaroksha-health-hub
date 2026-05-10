@@ -100,18 +100,19 @@ const BookAppointmentPage = () => {
   const { settings } = useSettings();
 
   // Fetch already-booked slots for the selected date
-  const { data: bookedSlots = [] } = useQuery<string[]>({
+  const { data: bookedAppointments = [], refetch: refetchBookings } = useQuery<any[]>({
     queryKey: ["booked-slots", doctor?.id, selectedDate],
     enabled: !!doctor?.id && !!selectedDate,
     queryFn: async () => {
       const { data } = await supabase
         .from("appointments")
-        .select("appointment_time")
+        .select("appointment_time, user_id")
         .eq("doctor_id", doctor!.id)
         .eq("appointment_date", selectedDate)
         .in("status", ["pending", "confirmed"]);
-      return (data || []).map((r: any) => r.appointment_time as string);
+      return data || [];
     },
+    refetchInterval: 10000, // Refresh every 10s for real-time occupancy
   });
 
   const PRIORITY_FEE = Number(settings?.priority_surcharge);
@@ -132,56 +133,55 @@ const BookAppointmentPage = () => {
     const amount = totalAmount;
 
     try {
-      // 1. First, create the appointment in Supabase with 'pending' status
       const newOrderId = genOrderId("OPD");
-      const { data: appointment, error } = await supabase.from("appointments").insert({
-        order_id: newOrderId,
-        doctor_id: doctor?.id,
-        doctor_name: doctor?.name,
-        patient_name: patient.name,
-        patient_phone: patient.phone,
-        patient_email: patient.email || null,
-        patient_age: patient.age ? String(patient.age) : null,
-        patient_gender: patient.gender,
-        patient_town: patient.town,
-        notes: patient.symptoms,
-        appointment_date: selectedDate,
-        appointment_time: selectedSlot,
-        status: "pending",
-        payment_status: "pending",
-        platform_fee: PLATFORM_FEE,
-        consultation_fee: Number(doctor?.fee || doctor?.consultationFee || 0),
-        fee: Number(doctor?.fee || doctor?.consultationFee || 0),
-        is_priority: isPriority,
-        hospital_partner_id: doctor?.hospital_id || doctor?.partner_id,
-        partner_id: doctor?.partner_id || doctor?.hospital_id,
-        payment_method: paymentMethod,
-        user_id: user?.id || null,
-      }).select().single();
-      setConfirmedOrderId(newOrderId);
+      const vCode = Array.from({ length: 6 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 32)]).join("");
+      
+      // Use the atomic RPC to ensure capacity check and insertion happen in one transaction
+      const { data, error } = await supabase.rpc("book_op_appointment", {
+        p_order_id: newOrderId,
+        p_user_id: user?.id,
+        p_doctor_id: doctor?.id,
+        p_doctor_name: doctor?.name,
+        p_patient_name: patient.name,
+        p_patient_phone: patient.phone,
+        p_patient_email: patient.email || null,
+        p_patient_age: patient.age ? String(patient.age) : null,
+        p_patient_gender: patient.gender,
+        p_patient_town: patient.town,
+        p_notes: patient.symptoms,
+        p_appointment_date: selectedDate,
+        p_appointment_time: selectedSlot,
+        p_fee: totalAmount,
+        p_consultation_fee: Number(doctor?.fee || doctor?.consultationFee || 0),
+        p_platform_fee: PLATFORM_FEE,
+        p_is_priority: isPriority,
+        p_hospital_partner_id: doctor?.partner_id || doctor?.hospital_id,
+        p_verification_code: vCode
+      });
 
       if (error) throw error;
+      
+      if (data && !data.success) {
+        if (data.message === "SLOT_FULL") {
+          toast.error("This slot was just filled by another patient. Please select a different time.");
+          setStep("slots");
+          refetchBookings();
+          return;
+        }
+        if (data.message === "ALREADY_BOOKED") {
+          toast.info("You already have a booking for this slot. Check your profile for details.");
+          setStep("slots");
+          return;
+        }
+        throw new Error(data.message || "Booking failed");
+      }
 
-      const vCode = Array.from({ length: 6 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 32)]).join("");
-
-      // Update to confirmed (COD = pay at clinic, UPI = already paid)
-      const { error: updateError } = await supabase
-        .from("appointments")
-        .update({
-          payment_status: paymentMethod === "upi" ? "paid" : "pending",
-          status: "confirmed",
-          payment_method: paymentMethod,
-          verification_code: vCode,
-        })
-        .eq("id", appointment.id);
-
-      if (updateError) throw updateError;
-
-      toast.success("Payment successful! Secure transaction ID: " + transactionId);
+      setConfirmedOrderId(newOrderId);
       setStep("confirmed");
-    } catch (err) {
-      console.error(err);
-      toast.error("Transaction failed: " + (err?.message || "Unknown error"));
+      toast.success("Appointment booked successfully!");
+    } catch (err: any) {
+      console.error("Booking Error:", err);
+      toast.error(err?.message || "Failed to process booking. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -361,20 +361,30 @@ const BookAppointmentPage = () => {
 
               <div className="grid grid-cols-3 gap-2.5">
                 {doctorSlots.map((slotTime) => {
-                  const isBooked   = bookedSlots.includes(slotTime);
+                  const bookingsForSlot = bookedAppointments.filter(b => b.appointment_time === slotTime);
+                  const isAlreadyBookedByMe = bookedAppointments.some(b => b.appointment_time === slotTime && b.user_id === user?.id);
+                  const maxCapacity = doctor?.slot_capacity || 10;
+                  const currentCount = bookingsForSlot.length;
+                  const isFull = currentCount >= maxCapacity;
                   const isSelected = selectedSlot === slotTime;
+                  
+                  // Priority check: Show "Already Booked" even if not full
+                  const isDisabled = isFull || isAlreadyBookedByMe;
+
                   return (
                     <button
                       key={slotTime}
-                      disabled={isBooked}
+                      disabled={isDisabled}
                       onClick={() => setSelectedSlot(slotTime)}
-                      className={`py-3 rounded-xl text-xs font-black tracking-tight border-2 transition-all duration-200 active:scale-95 ${
-                        isBooked
-                          ? "bg-slate-50 text-slate-300 border-transparent cursor-not-allowed"
+                      className={`relative py-3 rounded-xl text-xs font-black tracking-tight border-2 transition-all duration-200 active:scale-95 flex flex-col items-center justify-center min-h-[56px] ${
+                        isDisabled
+                          ? isAlreadyBookedByMe 
+                            ? "bg-blue-50 text-blue-400 border-blue-100 cursor-not-allowed"
+                            : "bg-slate-50 text-slate-300 border-transparent cursor-not-allowed"
                           : ""
                       }`}
                       style={
-                        !isBooked
+                        !isDisabled
                           ? isSelected
                             ? { backgroundColor: accentColor, borderColor: accentColor, color: "white", boxShadow: `0 4px 12px ${accentColor}40` }
                             : { backgroundColor: "white", borderColor: "#e2e8f0", color: "#475569" }
@@ -382,7 +392,16 @@ const BookAppointmentPage = () => {
                       }
                     >
                       {slotTime}
-                      {isBooked && <span className="block text-[8px] font-bold mt-0.5 opacity-60">Booked</span>}
+                      {isAlreadyBookedByMe ? (
+                        <span className="text-[7px] font-bold mt-0.5 text-blue-600 uppercase">You Booked</span>
+                      ) : isFull ? (
+                        <span className="text-[8px] font-bold mt-0.5 text-red-400 uppercase">Slot Full</span>
+                      ) : (
+                        <div className="flex items-center gap-1 mt-0.5 opacity-60">
+                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                           <span className="text-[8px] font-bold">{maxCapacity - currentCount} left</span>
+                        </div>
+                      )}
                     </button>
                   );
                 })}

@@ -34,6 +34,8 @@ interface LabTest {
   original_price?: number;
   turnaround: string;
   description?: string;
+  partner_id?: string;
+  status: "active" | "hold" | "deleted";
 }
 
 interface LabCombo {
@@ -46,6 +48,8 @@ interface LabCombo {
   combo_price: number;
   tag?: string;
   color: string;
+  partner_id?: string;
+  status: "active" | "hold" | "deleted";
 }
 
 interface LabTestItem {
@@ -542,11 +546,18 @@ const LabDashboard = () => {
       // If it's a new test, we omit the 'id' to let Supabase generate one
       // or we handle the null id safely by doing an upsert.
       const { id, ...data } = test;
+      
+      // Security: Force partner_id to ensure ownership
+      const finalData = { 
+        ...data, 
+        partner_id: partnerId 
+      };
+
       if (!id) {
-        const { error } = await supabase.from("lab_tests").insert(data);
+        const { error } = await supabase.from("lab_tests").insert(finalData);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("lab_tests").update(data).eq("id", id);
+        const { error } = await supabase.from("lab_tests").update(finalData).eq("id", id);
         if (error) throw error;
       }
     },
@@ -581,11 +592,18 @@ const LabDashboard = () => {
   const saveComboMutation = useMutation({
     mutationFn: async (combo: LabCombo) => {
       const { id, ...data } = combo;
+      
+      // Security: Force partner_id to ensure ownership
+      const finalData = { 
+        ...data, 
+        partner_id: partnerId 
+      };
+
       if (!id) {
-        const { error } = await supabase.from("lab_combos").insert(data);
+        const { error } = await supabase.from("lab_combos").insert(finalData);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("lab_combos").update(data).eq("id", id);
+        const { error } = await supabase.from("lab_combos").update(finalData).eq("id", id);
         if (error) throw error;
       }
     },
@@ -1067,6 +1085,8 @@ const LabDashboard = () => {
                       original_price: 0,
                       category: "Blood",
                       turnaround: "6 hours",
+                      status: "active",
+                      partner_id: partnerId,
                     } as any);
                     setIsEditTestOpen(true);
                   }}

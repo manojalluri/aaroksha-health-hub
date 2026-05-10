@@ -98,7 +98,7 @@ const LabTestsPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(new URLSearchParams(location.search).get("q") || "");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showCart, setShowCart] = useState(false);
@@ -135,11 +135,16 @@ const LabTestsPage = () => {
       
       const activeIds = (activeLabs || []).map(p => p.partner_id);
 
+      // Early exit if no active lab partners exist to avoid .in([], []) errors
+      if (activeIds.length === 0) return [] as LabTest[];
+
       // 2. Fetch tests for these active partners
+      // Only show ACTIVE tests from ACTIVE partners
       const { data, error } = await supabase
         .from("lab_tests")
         .select("*")
-        .in("partner_id", activeIds);
+        .in("partner_id", activeIds)
+        .eq("status", "active");
 
       if (error) throw error;
       return (data || []) as LabTest[];
@@ -149,7 +154,23 @@ const LabTestsPage = () => {
   const { data: combos = STATIC_COMBOS } = useQuery<LabCombo[]>({
     queryKey: ["lab-combos"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("lab_combos").select("*");
+      // 1. Get active partners
+      const { data: activeLabs } = await supabase
+        .from("partners")
+        .select("partner_id")
+        .eq("type", "lab")
+        .eq("status", "active");
+      
+      const activeIds = (activeLabs || []).map(p => p.partner_id);
+      if (activeIds.length === 0) return STATIC_COMBOS;
+
+      // 2. Fetch combos for active partners
+      const { data, error } = await supabase
+        .from("lab_combos")
+        .select("*")
+        .in("partner_id", activeIds)
+        .eq("status", "active");
+
       if (error || !data?.length) return STATIC_COMBOS;
       return data as LabCombo[];
     },
