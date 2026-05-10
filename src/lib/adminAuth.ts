@@ -235,6 +235,7 @@ export const authenticatePartner = async (
 
     if (rpcErr) {
       console.error(`[adminAuth] RPC Error:`, rpcErr.message);
+      toast.error("Security system error. Please contact support.");
       return null;
     }
 
@@ -243,26 +244,30 @@ export const authenticatePartner = async (
       return rpcData[0] as { id: string; partner_id: string; name: string };
     }
 
-    // ── 3. Diagnostic Check: Why did it fail? ──
-    // If we reach here, either the password was wrong OR the status is not active.
-    const { data: partnerCheck } = await supabase
+    // ── 3. DEEP SCAN: Why did it fail? ──
+    // Check if the email exists AT ALL in any role
+    const { data: anyPartner } = await supabase
       .from("partners")
-      .select("status, name")
+      .select("status, name, type")
       .eq("email", cleanEmail)
-      .eq("type", type)
       .maybeSingle();
 
-    if (partnerCheck) {
-      if (partnerCheck.status !== "active") {
-        console.warn(`[adminAuth] Login blocked: ${partnerCheck.name} is currently "${partnerCheck.status}".`);
-        toast.error(`Your account (${partnerCheck.name}) is currently ${partnerCheck.status}. Please contact the Super Admin.`);
-      } else {
-        console.warn(`[adminAuth] Invalid password for: ${cleanEmail}`);
+    if (anyPartner) {
+      // Check if they are in the wrong portal
+      if (anyPartner.type.toLowerCase() !== type.toLowerCase()) {
+        toast.error(`Wrong Portal! This email is registered as a "${anyPartner.type}". Please use the correct login page.`);
+        console.warn(`[adminAuth] Portal mismatch: ${cleanEmail} is ${anyPartner.type}, not ${type}`);
+      } 
+      // Check if inactive
+      else if (anyPartner.status !== "active") {
+        toast.error(`Account Inactive: ${anyPartner.name} is currently ${anyPartner.status}.`);
+      } 
+      // Password must be wrong
+      else {
         toast.error("Invalid password. Please check and try again.");
       }
     } else {
-      console.warn(`[adminAuth] No ${type} partner found with email: ${cleanEmail}`);
-      toast.error(`No ${type} account found with that email.`);
+      toast.error(`No ${type} account found with this email.`);
     }
 
     return null;
