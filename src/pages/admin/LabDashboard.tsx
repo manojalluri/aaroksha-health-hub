@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSettings } from "@/lib/settingsSync";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle
 } from "@/components/ui/dialog";
@@ -435,13 +436,7 @@ const LabDashboard = () => {
   );
 
   // ── Fetch Platform Settings ─────────────────────────────────────────────
-  const { data: settings } = useQuery({
-    queryKey: ["platform-settings"],
-    queryFn: async () => {
-      const { data } = await supabase.from("platform_settings").select("*").eq("id", "global").single();
-      return data;
-    }
-  });
+  const { settings } = useSettings();
 
   // ── Fetch bookings ──────────────────────────────────────────────────────────
   const { data: bookings_raw, isLoading: isBookingsLoading } = useQuery<LabBooking[]>({
@@ -662,7 +657,7 @@ const LabDashboard = () => {
       // Show only tests subtotal - excludes the platform collection fee added by super admin
       val: "₹" + bookings
         .filter((b) => b.status !== "cancelled")
-        .reduce((sum, b) => sum + Math.max(0, (b.total_amount || 0) - (b.platform_fee || Number(settings?.lab_fee || 39))), 0)
+        .reduce((sum, b) => sum + Math.max(0, (b.total_amount || 0) - (b.platform_fee || Number(settings?.lab_fee))), 0)
         .toLocaleString("en-IN"),
       icon: TrendingUp,
       iconBg: "bg-blue-50",
@@ -673,7 +668,7 @@ const LabDashboard = () => {
   const settlementData = useMemo(() => {
     const billable = bookings.filter(b => b.status === "completed");
     // Use tests subtotal only (total_amount minus the platform fee added by super admin)
-    const total = billable.reduce((s, b) => s + Math.max(0, (b.total_amount || 0) - (b.platform_fee || Number(settings?.lab_fee || 39))), 0);
+    const total = billable.reduce((s, b) => s + Math.max(0, (b.total_amount || 0) - (b.platform_fee || Number(settings?.lab_fee))), 0);
     const commRate = partner?.commission_rate || 18;
     const platformCommission = (total * commRate) / 100;
     return { total, count: billable.length, platformCommission, netEarnings: total - platformCommission };

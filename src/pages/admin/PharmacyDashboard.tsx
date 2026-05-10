@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSettings } from "@/lib/settingsSync";
 import { verifyPartnerSession, clearAdminSession, revokePartnerSession, getPartnerIdFromSession } from "@/lib/adminAuth";
 
 // --- Types --------------------------------------------------------------
@@ -114,13 +115,7 @@ const PharmacyDashboard = () => {
   const [customTo, setCustomTo] = useState("");
 
   // ─── Fetch Platform Settings ─────────────────────────────────────────────
-  const { data: settings } = useQuery({
-    queryKey: ["platform-settings"],
-    queryFn: async () => {
-      const { data } = await supabase.from("platform_settings").select("*").eq("id", "global").single();
-      return data;
-    }
-  });
+  const { settings } = useSettings();
 
   // ─── Fetch Logistics Partners (pharmacy category) ────────────────────────
   const { data: logisticsPartners = [] } = useQuery<any[]>({
@@ -229,11 +224,11 @@ const PharmacyDashboard = () => {
     setSubTotal(order.sub_total || 0);
     
     // Use dynamic fees from super admin settings
-    const baseDelivery = Number(settings?.delivery_fee || 40);
-    const expressFee = Number(settings?.express_fee || 99);
+    const baseDelivery = Number(settings?.delivery_fee);
+    const expressFee = Number(settings?.express_fee);
     
     setDeliveryFee(order.is_express_delivery ? expressFee : baseDelivery);
-    setPlatformFee(Number(settings?.pharm_fee || 19));
+    setPlatformFee(Number(settings?.pharm_fee));
     
     setDeliveryCodeInput("");
     // Pre-fill logistics partner if already assigned

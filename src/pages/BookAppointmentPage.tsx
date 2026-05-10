@@ -10,6 +10,7 @@ import { supabase } from "@/lib/supabase";
 import { useQuery } from "@tanstack/react-query";
 import { getLocalDoctors } from "@/lib/doctorsSync";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSettings } from "@/lib/settingsSync";
 
 const avatarColors = ["#2563eb", "#7c3aed", "#059669", "#dc2626", "#d97706", "#0891b2"];
 
@@ -96,13 +97,7 @@ const BookAppointmentPage = () => {
   const formatDate = (d: string) =>
     d ? new Date(d).toLocaleDateString("en-IN", { weekday: "short", month: "short", day: "numeric" }) : "";
 
-  const { data: settings } = useQuery({
-    queryKey: ["platform-settings"],
-    queryFn: async () => {
-      const { data } = await supabase.from("platform_settings").select("*").eq("id", "global").single();
-      return data;
-    }
-  });
+  const { settings } = useSettings();
 
   // Fetch already-booked slots for the selected date
   const { data: bookedSlots = [] } = useQuery<string[]>({
@@ -119,8 +114,8 @@ const BookAppointmentPage = () => {
     },
   });
 
-  const PRIORITY_FEE = Number(settings?.priority_surcharge || 250);
-  const PLATFORM_FEE = Number(settings?.opd_fee || 29);
+  const PRIORITY_FEE = Number(settings?.priority_surcharge);
+  const PLATFORM_FEE = Number(settings?.opd_fee);
   const totalAmount = Number(doctor?.fee || doctor?.consultationFee || 0) + PLATFORM_FEE + (isPriority ? PRIORITY_FEE : 0);
 
   const handleBooking = () => {

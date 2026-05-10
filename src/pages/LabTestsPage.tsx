@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
-import { getSettings } from "@/lib/settingsSync";
+import { useSettings } from "@/lib/settingsSync";
 import SEO from "@/components/SEO";
 
 interface LabTest {
@@ -109,20 +109,7 @@ const LabTestsPage = () => {
   const [selectedTime, setSelectedTime] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmedOrderId, setConfirmedOrderId] = useState("");
-  const [settingsState, setSettingsState] = useState(getSettings());
-
-  useEffect(() => {
-    const handleSettingsUpdate = () => setSettingsState(getSettings());
-    window.addEventListener("settings_updated", handleSettingsUpdate);
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === "aaroksha_settings") handleSettingsUpdate();
-    };
-    window.addEventListener("storage", handleStorage);
-    return () => {
-      window.removeEventListener("settings_updated", handleSettingsUpdate);
-      window.removeEventListener("storage", handleStorage);
-    };
-  }, []);
+  const { settings } = useSettings();
 
   const genOrderId = (prefix: string) => {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -215,7 +202,7 @@ const LabTestsPage = () => {
   };
   const removeFromCart = (id: string) => setCart(cart.filter((c) => c.test.id !== id));
   
-  const PLATFORM_FEE = Number(settingsState?.lab_fee || 49);
+  const PLATFORM_FEE = Number(settings?.lab_fee);
   const testTotal = cart.reduce((sum, c) => sum + c.test.price * c.quantity, 0);
   const total = testTotal + (cart.length > 0 ? PLATFORM_FEE : 0);
 

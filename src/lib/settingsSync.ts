@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { useState, useEffect } from "react";
 
 export interface PlatformSettings {
   id?: number;
@@ -170,4 +171,44 @@ export const syncSettingsFromSupabase = async () => {
     console.error("Sync Settings Failed:", err);
   }
   return getSettings();
+};
+
+export const useSettings = () => {
+  const [settings, setSettings] = useState<PlatformSettings>(getSettings());
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Initial fetch
+    const fetchSettings = async () => {
+      const data = await syncSettingsFromSupabase();
+      if (data) setSettings(data);
+      setLoading(false);
+    };
+
+    fetchSettings();
+
+    // Subscribe to realtime changes
+    const subscription = supabase
+      .channel('platform_settings_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'platform_settings'
+        },
+        async () => {
+          console.log('Settings changed realtime, refetching...');
+          const data = await syncSettingsFromSupabase();
+          if (data) setSettings(data);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, []);
+
+  return { settings, loading };
 };

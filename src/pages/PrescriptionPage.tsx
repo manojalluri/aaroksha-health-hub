@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSettings } from "@/lib/settingsSync";
 
 const genOrderId = (prefix: string) => {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -214,22 +215,16 @@ const PrescriptionPage = () => {
   };
 
   // Calculated totals
-  const { data: settings } = useQuery({
-    queryKey: ["platform-settings"],
-    queryFn: async () => {
-      const { data } = await supabase.from("platform_settings").select("*").eq("id", "global").single();
-      return data;
-    }
-  });
+  const { settings } = useSettings();
 
   const availableMeds = medicines.filter((m) => m.available);
   const prescriptionTotal = availableMeds.reduce((s, m) => s + m.price, 0);
   
   // Use admin provided fees if available (in review step), else use settings
-  const PLATFORM_FEE = prescriptionRecord?.platform_fee ? Number(prescriptionRecord.platform_fee) : Number(settings?.pharm_fee || 19);
+  const PLATFORM_FEE = prescriptionRecord?.platform_fee ? Number(prescriptionRecord.platform_fee) : Number(settings?.pharm_fee);
   
-  const baseDelivery = Number(settings?.delivery_fee || 40);
-  const expressFee = Number(settings?.express_fee || 99);
+  const baseDelivery = Number(settings?.delivery_fee);
+  const expressFee = Number(settings?.express_fee);
   const deliveryFee = prescriptionRecord?.delivery_fee ? Number(prescriptionRecord.delivery_fee) : (prescriptionRecord?.is_express_delivery ? expressFee : baseDelivery);
   
   const subTotal = prescriptionTotal;
