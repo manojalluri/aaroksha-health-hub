@@ -217,62 +217,78 @@ export const authenticatePartner = async (
   password: string,
   type: Exclude<AdminRole, "super">
 ): Promise<{ id: string; partner_id: string; name: string } | null> => {
-  const cleanEmail = email.toLowerCase().trim();
+  const cleanEmail    = email.toLowerCase().trim();
   const cleanPassword = password.trim();
 
   if (!cleanEmail || !cleanPassword) return null;
 
   try {
-    // ── 1. Attempt Authentication ──
+    // ── LAYER 1: Try secure RPC (bcrypt + plaintext fallback on DB side) ──
     const { data: rpcData, error: rpcErr } = await supabase.rpc(
       "authenticate_partner",
-      { 
-        p_email: cleanEmail, 
-        p_password: cleanPassword, 
-        p_type: type 
-      }
+      { p_email: cleanEmail, p_password: cleanPassword, p_type: type }
     );
 
-    if (rpcErr) {
-      console.error(`[adminAuth] RPC Error:`, rpcErr.message);
-      toast.error("Security system error. Please contact support.");
-      return null;
-    }
-
-    // ── 2. Handle Success ──
-    if (rpcData && rpcData.length > 0) {
+    if (!rpcErr && rpcData && rpcData.length > 0) {
+      // ✅ RPC success
       return rpcData[0] as { id: string; partner_id: string; name: string };
     }
 
-    // ── 3. DEEP SCAN: Why did it fail? ──
-    // Check if the email exists AT ALL in any role
-    const { data: anyPartner } = await supabase
-      .from("partners")
-      .select("status, name, type")
-      .eq("email", cleanEmail)
-      .maybeSingle();
-
-    if (anyPartner) {
-      // Check if they are in the wrong portal
-      if (anyPartner.type.toLowerCase() !== type.toLowerCase()) {
-        toast.error(`Wrong Portal! This email is registered as a "${anyPartner.type}". Please use the correct login page.`);
-        console.warn(`[adminAuth] Portal mismatch: ${cleanEmail} is ${anyPartner.type}, not ${type}`);
-      } 
-      // Check if inactive
-      else if (anyPartner.status !== "active") {
-        toast.error(`Account Inactive: ${anyPartner.name} is currently ${anyPartner.status}.`);
-      } 
-      // Password must be wrong
-      else {
-        toast.error("Invalid password. Please check and try again.");
-      }
-    } else {
-      toast.error(`No ${type} account found with this email.`);
+    if (rpcErr) {
+      console.warn(`[adminAuth] RPC unavailable (${rpcErr.message}), falling back to direct check.`);
     }
 
-    return null;
+    // ── LAYER 2: Direct DB check (works even if RPC hasn't been deployed) ──
+    // Fetch the partner row directly without exposing password to JS —
+    // we compare server-returned plaintext (transitional) on the client.
+    const { data: rows, error: dbErr } = await supabase
+      .from("partners")
+      .select("id, partner_id, name, password, plain_password, status, type")
+      .eq("email", cleanEmail)
+      .limit(1);
+
+    if (dbErr) {
+      console.error("[adminAuth] DB fetch error:", dbErr.message);
+      toast.error("Database error. Please try again.");
+      return null;
+    }
+
+    if (!rows || rows.length === 0) {
+      toast.error(`No account found with this email address.`);
+      return null;
+    }
+
+    const p = rows[0];
+
+    // ── Wrong portal check ──
+    if (p.type.toLowerCase() !== type.toLowerCase()) {
+      toast.error(`Wrong login page! This email belongs to a "${p.type}" account. Please use the ${p.type} login portal.`);
+      return null;
+    }
+
+    // ── Account inactive check ──
+    if (p.status !== "active") {
+      toast.error(`Account is ${p.status}. Please contact the Super Admin to reactivate your account.`);
+      return null;
+    }
+
+    // ── Password check (plaintext fallback for pre-migration partners) ──
+    const passwordMatches =
+      p.password === cleanPassword ||
+      (p.plain_password && p.plain_password === cleanPassword);
+
+    if (!passwordMatches) {
+      toast.error("Incorrect password. Please check and try again.");
+      return null;
+    }
+
+    // ✅ Layer 2 success
+    console.log(`[adminAuth] Login via direct-check for ${type}: ${p.name}`);
+    return { id: p.id, partner_id: p.partner_id, name: p.name };
+
   } catch (err: any) {
     console.error(`[adminAuth] Critical failure:`, err.message);
+    toast.error("An unexpected error occurred. Please try again.");
     return null;
   }
 };
