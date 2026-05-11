@@ -7,7 +7,7 @@ import {
   TrendingUp, Activity, Loader2, KeyRound, Edit2, Trash2,
   ArrowUpRight, AlertCircle, Calendar, Search, Truck,
   ChevronUp, ChevronDown, ImagePlus, Palette, Link2, GripVertical, LayoutTemplate,
-  MapPin, Package, UserCheck, Ban, CheckCircle, ClipboardList
+  MapPin, Package, UserCheck, Ban, CheckCircle, ClipboardList, HardDrive
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
@@ -21,7 +21,7 @@ import { useNavigate } from "react-router-dom";
 import { verifySuperAdminSession, clearAdminSession } from "@/lib/adminAuth";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Tab = "overview" | "live" | "users" | "partners" | "payouts" | "credentials" | "commissions" | "transactions" | "settings" | "lookup" | "banners" | "logistics_hub" | "incomplete_tasks";
+type Tab = "overview" | "live" | "users" | "partners" | "payouts" | "credentials" | "commissions" | "transactions" | "settings" | "lookup" | "banners" | "logistics_hub" | "incomplete_tasks" | "storage";
 
 interface BookingItem {
   id: string;
@@ -830,6 +830,68 @@ const SuperAdminDashboard = () => {
   const unassigned       = deliveryOrders.filter(p => !(p as any).logistics_partner_id).length;
   const assignedOrders   = deliveryOrders.filter(p => !!(p as any).logistics_partner_id).length;
 
+  const [storageStats, setStorageStats] = useState<{bucket: string; files: number; totalKB: number}[]>([]);
+  const [storageFiles, setStorageFiles] = useState<{name: string; bucket: string; sizeKB: number; created: string}[]>([]);
+  const [storageLoading, setStorageLoading] = useState(false);
+  const [storageLoaded, setStorageLoaded] = useState(false);
+  const [deletingFile, setDeletingFile] = useState<string | null>(null);
+
+  const loadStorageStats = async () => {
+    setStorageLoading(true);
+    try {
+      const buckets = ["prescriptions", "doctor_profiles", "banners"];
+      const allFiles: {name: string; bucket: string; sizeKB: number; created: string}[] = [];
+      const stats: {bucket: string; files: number; totalKB: number}[] = [];
+
+      for (const bucket of buckets) {
+        const { data: rootItems } = await supabase.storage.from(bucket).list("", { limit: 1000 });
+        if (!rootItems) continue;
+        let bucketFiles: {name: string; bucket: string; sizeKB: number; created: string}[] = [];
+
+        for (const item of rootItems) {
+          if (!item.id) {
+            // folder — list inside
+            const { data: subItems } = await supabase.storage.from(bucket).list(item.name, { limit: 1000 });
+            if (subItems) {
+              subItems.forEach(sf => {
+                bucketFiles.push({ name: `${item.name}/${sf.name}`, bucket, sizeKB: Math.round((sf.metadata?.size || 0) / 1024), created: sf.created_at || "" });
+              });
+            }
+          } else {
+            bucketFiles.push({ name: item.name, bucket, sizeKB: Math.round((item.metadata?.size || 0) / 1024), created: item.created_at || "" });
+          }
+        }
+
+        const totalKB = bucketFiles.reduce((s, f) => s + f.sizeKB, 0);
+        stats.push({ bucket, files: bucketFiles.length, totalKB });
+        allFiles.push(...bucketFiles);
+      }
+
+      setStorageStats(stats);
+      setStorageFiles(allFiles.sort((a, b) => b.sizeKB - a.sizeKB));
+      setStorageLoaded(true);
+    } catch (err: any) {
+      toast.error("Failed to load storage: " + err.message);
+    } finally {
+      setStorageLoading(false);
+    }
+  };
+
+  const deleteStorageFile = async (bucket: string, name: string) => {
+    setDeletingFile(name);
+    try {
+      const { error } = await supabase.storage.from(bucket).remove([name]);
+      if (error) throw error;
+      setStorageFiles(prev => prev.filter(f => !(f.name === name && f.bucket === bucket)));
+      setStorageStats(prev => prev.map(s => s.bucket === bucket ? { ...s, files: s.files - 1, totalKB: s.totalKB - (storageFiles.find(f => f.name === name && f.bucket === bucket)?.sizeKB || 0) } : s));
+      toast.success(`Deleted ${name}`);
+    } catch (err: any) {
+      toast.error("Delete failed: " + err.message);
+    } finally {
+      setDeletingFile(null);
+    }
+  };
+
   // ─── Nav Items ─────────────────────────────────────────────────────────────
   const NAV = [
     { id: "overview" as Tab,      label: "Overview",       icon: <Activity className="h-4 w-4" /> },
@@ -845,6 +907,7 @@ const SuperAdminDashboard = () => {
     { id: "transactions" as Tab,  label: "Transactions",   icon: <CreditCard className="h-4 w-4" /> },
     { id: "banners" as Tab,       label: "Banners",        icon: <Eye className="h-4 w-4" /> },
     { id: "settings" as Tab,      label: "Settings",       icon: <Settings className="h-4 w-4" /> },
+    { id: "storage" as Tab,       label: "Storage",        icon: <HardDrive className="h-4 w-4" /> },
   ];
 
   if (isVerifying) {
@@ -2801,7 +2864,180 @@ const SuperAdminDashboard = () => {
             </div>
           )}
 
-        </main>
+          {/* ── STORAGE MANAGEMENT TAB ─────────────────────────────────────── */}
+          {activeTab === "storage" && (
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">Storage Management</h2>
+                  <p className="text-slate-400 text-sm font-medium">Monitor and clean up Supabase Storage buckets</p>
+                </div>
+                <button
+                  onClick={loadStorageStats}
+                  disabled={storageLoading}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm shadow-lg shadow-blue-200 transition-all disabled:opacity-50"
+                >
+                  {storageLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <HardDrive className="h-4 w-4" />}
+                  {storageLoaded ? "Refresh Stats" : "Load Storage Stats"}
+                </button>
+              </div>
+
+              {!storageLoaded && !storageLoading && (
+                <div className="bg-white rounded-2xl border border-slate-100 p-16 text-center shadow-sm">
+                  <HardDrive className="h-12 w-12 text-slate-200 mx-auto mb-4" />
+                  <p className="font-black text-slate-500 text-lg">Storage Not Loaded</p>
+                  <p className="text-slate-400 text-sm mt-1">Click "Load Storage Stats" to scan all buckets</p>
+                </div>
+              )}
+
+              {storageLoading && (
+                <div className="bg-white rounded-2xl border border-slate-100 p-16 text-center shadow-sm">
+                  <Loader2 className="h-10 w-10 text-blue-500 animate-spin mx-auto mb-4" />
+                  <p className="font-black text-slate-500">Scanning storage buckets...</p>
+                </div>
+              )}
+
+              {storageLoaded && !storageLoading && (
+                <>
+                  {/* Free Tier Progress */}
+                  <div className="bg-slate-900 rounded-2xl p-6 text-white shadow-xl">
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-blue-400">Free Tier Usage</p>
+                        <p className="text-3xl font-black mt-1">
+                          {(storageStats.reduce((s, b) => s + b.totalKB, 0) / 1024).toFixed(1)} MB
+                          <span className="text-slate-400 text-lg font-bold"> / 1,000 MB</span>
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-black text-emerald-400">
+                          {(100 - storageStats.reduce((s, b) => s + b.totalKB, 0) / 1024 / 10).toFixed(1)}%
+                        </p>
+                        <p className="text-xs text-slate-400">free remaining</p>
+                      </div>
+                    </div>
+                    <div className="w-full bg-slate-700 rounded-full h-3">
+                      <div
+                        className="bg-gradient-to-r from-blue-500 to-emerald-400 h-3 rounded-full transition-all"
+                        style={{ width: `${Math.min(storageStats.reduce((s, b) => s + b.totalKB, 0) / 1024 / 10, 100)}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-2 font-bold">
+                      {storageStats.reduce((s, b) => s + b.files, 0)} total files across {storageStats.length} buckets
+                    </p>
+                  </div>
+
+                  {/* Bucket Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {storageStats.map(s => {
+                      const mb = (s.totalKB / 1024).toFixed(2);
+                      const pct = Math.min((s.totalKB / 1024 / 10), 100).toFixed(1);
+                      const bucketColor = s.bucket === "prescriptions" ? "text-violet-600 bg-violet-50" : s.bucket === "doctor_profiles" ? "text-blue-600 bg-blue-50" : "text-amber-600 bg-amber-50";
+                      return (
+                        <div key={s.bucket} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+                          <div className="flex items-center gap-3 mb-4">
+                            <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${bucketColor}`}>
+                              <HardDrive className="h-5 w-5" />
+                            </div>
+                            <div>
+                              <p className="font-black text-slate-800 text-sm">{s.bucket}</p>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{s.files} files</p>
+                            </div>
+                          </div>
+                          <p className="text-2xl font-black text-slate-900">{mb} MB</p>
+                          <div className="w-full bg-slate-100 rounded-full h-2 mt-2">
+                            <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${pct}%` }} />
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-1 font-bold">{pct}% of free tier used</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* File List */}
+                  <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                    <div className="px-6 py-4 border-b border-slate-50 flex items-center justify-between">
+                      <div>
+                        <p className="font-black text-slate-800">All Files</p>
+                        <p className="text-[11px] text-slate-400 font-bold">Sorted by size — largest first</p>
+                      </div>
+                      <span className="text-[11px] font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
+                        {storageFiles.length} files
+                      </span>
+                    </div>
+                    <div className="divide-y divide-slate-50 max-h-[500px] overflow-y-auto">
+                      {storageFiles.map((f, i) => (
+                        <div key={i} className="flex items-center justify-between px-6 py-3 hover:bg-slate-50/60 transition-colors">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 text-[10px] font-black ${
+                              f.bucket === "prescriptions" ? "bg-violet-100 text-violet-600" :
+                              f.bucket === "doctor_profiles" ? "bg-blue-100 text-blue-600" : "bg-amber-100 text-amber-600"
+                            }`}>
+                              {f.bucket === "prescriptions" ? "Rx" : f.bucket === "doctor_profiles" ? "Dr" : "Bn"}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-700 truncate max-w-[280px]">{f.name}</p>
+                              <p className="text-[10px] text-slate-400 font-medium">{f.bucket} · {f.created ? new Date(f.created).toLocaleDateString("en-IN") : "—"}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className={`text-xs font-black px-2 py-0.5 rounded-lg ${
+                              f.sizeKB > 1000 ? "bg-red-50 text-red-600" :
+                              f.sizeKB > 300 ? "bg-amber-50 text-amber-600" : "bg-emerald-50 text-emerald-600"
+                            }`}>
+                              {f.sizeKB > 1024 ? `${(f.sizeKB/1024).toFixed(1)} MB` : `${f.sizeKB} KB`}
+                            </span>
+                            <button
+                              onClick={() => {
+                                if (confirm(`Delete "${f.name}" from ${f.bucket}? This cannot be undone.`)) {
+                                  deleteStorageFile(f.bucket, f.name);
+                                }
+                              }}
+                              disabled={deletingFile === f.name}
+                              className="h-7 w-7 rounded-lg bg-red-50 border border-red-100 flex items-center justify-center text-red-400 hover:bg-red-100 hover:text-red-600 transition-all active:scale-95 disabled:opacity-40"
+                              title="Delete file"
+                            >
+                              {deletingFile === f.name ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {storageFiles.length === 0 && (
+                        <div className="px-6 py-12 text-center text-slate-400 text-sm">No files found</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* SQL Tip */}
+                  <div className="bg-slate-800 rounded-2xl p-5 border border-slate-700">
+                    <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-3">💡 SQL Optimization Queries</p>
+                    <p className="text-xs text-slate-400 font-medium mb-3">
+                      Run these in <strong className="text-white">Supabase → SQL Editor</strong> for deeper analysis and bulk cleanup:
+                    </p>
+                    <div className="space-y-2">
+                      {[
+                        "SELECT bucket_id, COUNT(*), ROUND(SUM((metadata->>'size')::numeric)/1024/1024,2) AS total_mb FROM storage.objects WHERE metadata IS NOT NULL GROUP BY bucket_id;",
+                        "DELETE FROM storage.objects WHERE bucket_id = 'prescriptions' AND NOT EXISTS (SELECT 1 FROM public.prescriptions p WHERE p.image_url LIKE '%' || split_part(name, '/', 2) || '%');",
+                        "SELECT bucket_id, name, ROUND((metadata->>'size')::numeric/1024,1) AS kb FROM storage.objects WHERE metadata IS NOT NULL ORDER BY (metadata->>'size')::numeric DESC LIMIT 20;",
+                      ].map((q, i) => (
+                        <div key={i} className="bg-slate-900 rounded-xl p-3 relative group">
+                          <code className="text-[10px] text-emerald-400 font-mono leading-relaxed block">{q}</code>
+                          <button
+                            onClick={() => { navigator.clipboard.writeText(q); toast.success("Query copied!"); }}
+                            className="absolute top-2 right-2 h-6 w-6 rounded-lg bg-slate-700 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
+                          >
+                            <Copy className="h-3 w-3 text-slate-300" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
       </div>
 
       {/* ── ADD / EDIT PARTNER MODAL ────────────────────────────────────── */}
