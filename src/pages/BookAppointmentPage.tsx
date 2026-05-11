@@ -61,7 +61,6 @@ const BookAppointmentPage = () => {
   const [step, setStep] = useState<"slots" | "details" | "checkout" | "confirmed">("slots");
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedSlot, setSelectedSlot] = useState("");
-  const [isPriority, setIsPriority] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmedOrderId, setConfirmedOrderId] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"upi" | "cod">("cod");
@@ -115,9 +114,8 @@ const BookAppointmentPage = () => {
     refetchInterval: 10000, // Refresh every 10s for real-time occupancy
   });
 
-  const PRIORITY_FEE = Number(settings?.priority_surcharge);
   const PLATFORM_FEE = Number(settings?.opd_fee);
-  const totalAmount = Number(doctor?.fee || doctor?.consultationFee || 0) + PLATFORM_FEE + (isPriority ? PRIORITY_FEE : 0);
+  const totalAmount = Number(doctor?.fee || doctor?.consultationFee || 0) + PLATFORM_FEE;
 
   const handleBooking = () => {
     if (!patient.name || !patient.phone || !patient.age || !patient.gender || !patient.town || !patient.symptoms) {
@@ -157,7 +155,6 @@ const BookAppointmentPage = () => {
         p_fee: totalAmount,
         p_consultation_fee: Number(doctor?.fee || doctor?.consultationFee || 0),
         p_platform_fee: PLATFORM_FEE,
-        p_is_priority: isPriority,
         p_hospital_partner_id: doctor?.partner_id || doctor?.hospital_id,
         p_verification_code: vCode
       });
@@ -205,7 +202,6 @@ const BookAppointmentPage = () => {
           fee: totalAmount,
           consultation_fee: Number(doctor?.fee || doctor?.consultationFee || 0),
           platform_fee: PLATFORM_FEE,
-          is_priority: isPriority,
           hospital_partner_id: doctor?.partner_id || doctor?.hospital_id,
           partner_id: doctor?.partner_id || doctor?.hospital_id,
           status: "pending",
@@ -463,33 +459,6 @@ const BookAppointmentPage = () => {
             </div>
           )}
 
-          {/* Priority option */}
-          {selectedSlot && (
-            <div
-              onClick={() => setIsPriority(!isPriority)}
-              className={`cursor-pointer rounded-2xl border-2 p-4 transition-all ${
-                isPriority ? "border-amber-400 bg-amber-50" : "border-slate-200 bg-white hover:border-amber-300"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${isPriority ? "bg-amber-400" : "bg-slate-100"}`}>
-                    <Zap className={`h-5 w-5 ${isPriority ? "text-white" : "text-slate-400"}`} />
-                  </div>
-                  <div>
-                    <p className={`font-black text-sm ${isPriority ? "text-amber-800" : "text-slate-700"}`}>⚡ Priority Appointment</p>
-                    <p className={`text-xs font-medium ${isPriority ? "text-amber-600" : "text-slate-400"}`}>Skip the queue · Immediate attention · +₹{250}</p>
-                  </div>
-                </div>
-                <div className={`h-6 w-6 rounded-full border-2 flex items-center justify-center transition-all ${
-                  isPriority ? "bg-amber-400 border-amber-400" : "border-slate-300"
-                }`}>
-                  {isPriority && <div className="h-2.5 w-2.5 rounded-full bg-white" />}
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Continue Button */}
           {selectedSlot && (
             <button
@@ -669,12 +638,6 @@ const BookAppointmentPage = () => {
                 <span className="font-medium text-slate-500">Doctor Consultation Fee</span>
                 <span className="font-black text-slate-800">₹{doctor.fee}</span>
               </div>
-              {isPriority && (
-                <div className="flex justify-between text-sm">
-                  <span className="font-medium text-amber-600 flex items-center gap-1"><Zap className="h-3.5 w-3.5" />Priority Surcharge</span>
-                  <span className="font-black text-amber-700">+₹{250}</span>
-                </div>
-              )}
               <div className="flex justify-between text-sm">
                 <span className="font-medium text-slate-500">Platform Fee</span>
                 <span className="font-black text-green-600">FREE</span>
@@ -788,7 +751,7 @@ const BookAppointmentPage = () => {
               ? <Loader2 className="h-5 w-5 animate-spin" />
               : paymentMethod === "cod"
                 ? <>Confirm Booking (Pay at Clinic) →</>
-                : <>Confirm & Mark UPI Paid {isPriority && "⚡"} →</>}
+                : <>Confirm & Mark UPI Paid →</>}
           </button>
 
 

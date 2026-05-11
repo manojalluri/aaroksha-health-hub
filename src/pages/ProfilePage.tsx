@@ -838,13 +838,7 @@ const PrescriptionCard = ({
             </div>
           </div>
 
-          {/* Express badge */}
-          {rx.is_express_delivery && (
-            <div className="mx-4 mb-3 bg-amber-50 border border-amber-200 rounded-xl px-3 py-1.5 flex items-center gap-2">
-              <span className="text-base">⚡</span>
-              <span className="text-[10px] font-black text-amber-700 uppercase tracking-wider">Express Delivery</span>
-            </div>
-          )}
+          {/* delivery code badge placeholder */}
 
           {/* Pharmacist Review Stage */}
           {meds.length === 0 && rx.status === "pending" && (
@@ -905,7 +899,7 @@ const PrescriptionCard = ({
               )}
               {rx.delivery_fee != null && (
                 <div className="flex justify-between text-[11px] text-slate-500 font-medium">
-                  <span>{rx.is_express_delivery ? "⚡ Express Delivery" : "Delivery Fee"}</span>
+                  <span>Delivery Fee</span>
                   <span>₹{rx.delivery_fee}</span>
                 </div>
               )}

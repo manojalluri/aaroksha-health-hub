@@ -2449,7 +2449,6 @@ const SuperAdminDashboard = () => {
                     { label: "OPD Booking Fee (₹)", key: "opd_fee" },
                     { label: "Lab Test Booking Fee (₹)", key: "lab_fee" },
                     { label: "Pharmacy Order Fee (₹)", key: "pharm_fee" },
-                    { label: "Priority Slot Surcharge (₹)", key: "priority_surcharge" },
                   ].map(f => (
                     <div key={f.label}>
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">{f.label}</label>
@@ -2468,7 +2467,6 @@ const SuperAdminDashboard = () => {
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                   {[
                     { label: "Standard Delivery Fee (₹)", key: "delivery_fee" },
-                    { label: "Express Delivery Fee (₹)", key: "express_fee" },
                     { label: "Free Delivery Threshold (₹)", key: "free_threshold" },
                     { label: "Default Delivery Radius (km)", key: "delivery_radius" },
                     { label: "Max Delivery Time (hrs)", key: "delivery_time" },

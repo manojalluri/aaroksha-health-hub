@@ -240,9 +240,7 @@ const PharmacyDashboard = () => {
     
     // Use dynamic fees from super admin settings
     const baseDelivery = Number(settings?.delivery_fee);
-    const expressFee = Number(settings?.express_fee);
-    
-    setDeliveryFee(order.is_express_delivery ? expressFee : baseDelivery);
+    setDeliveryFee(baseDelivery);
     setPlatformFee(Number(settings?.pharm_fee));
     
     setDeliveryCodeInput("");

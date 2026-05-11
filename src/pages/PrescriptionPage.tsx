@@ -69,7 +69,6 @@ const PrescriptionPage = () => {
   const [confirmedOrderId, setConfirmedOrderId] = useState("");
   const [deliveryCode, setDeliveryCode] = useState("");
   const [codeCopied, setCodeCopied] = useState(false);
-  const [isExpress, setIsExpress] = useState(false);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
   const copyCode = (code: string) => {
@@ -151,7 +150,6 @@ const PrescriptionPage = () => {
         prescriptions: finalImageUrl ? [finalImageUrl] : [],
         status: "pending",
         is_auto_confirm: false,
-        is_express_delivery: isExpress,
         medicines: [],
       }).select().single();
 
@@ -231,8 +229,7 @@ const PrescriptionPage = () => {
   const PLATFORM_FEE = prescriptionRecord?.platform_fee ? Number(prescriptionRecord.platform_fee) : Number(settings?.pharm_fee);
   
   const baseDelivery = Number(settings?.delivery_fee);
-  const expressFee = Number(settings?.express_fee);
-  const deliveryFee = prescriptionRecord?.delivery_fee ? Number(prescriptionRecord.delivery_fee) : (prescriptionRecord?.is_express_delivery ? expressFee : baseDelivery);
+  const deliveryFee = prescriptionRecord?.delivery_fee ? Number(prescriptionRecord.delivery_fee) : baseDelivery;
   
   const subTotal = prescriptionTotal;
   const grandTotal = subTotal > 0 ? subTotal + deliveryFee + PLATFORM_FEE : 0;
@@ -652,28 +649,6 @@ const PrescriptionPage = () => {
                   placeholder={"House/Flat No., Building Name\nStreet, Area, Landmark\nCity, Pincode"}
                   className="w-full h-24 rounded-xl bg-slate-50 border border-slate-200 pl-9 pr-3 py-3 text-sm text-slate-700 placeholder:text-slate-300 outline-none focus:border-green-300 focus:ring-2 focus:ring-green-100 transition-all resize-none"
                 />
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Delivery & Confirmation Options</p>
-            <div className="space-y-3">
-
-
-              <div className="flex items-center justify-between bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                <div className="flex items-center gap-2.5">
-                  <div className="h-8 w-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
-                    <Package className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-black text-slate-800">Express Delivery</p>
-                    <p className="text-[9px] font-bold text-slate-400 leading-tight">Priority 2-hour home delivery</p>
-                  </div>
-                </div>
-                <button onClick={() => setIsExpress(!isExpress)} className={`h-6 w-11 rounded-full transition-colors relative ${isExpress ? 'bg-blue-500' : 'bg-slate-200'}`}>
-                  <div className={`absolute top-1 h-4 w-4 bg-white rounded-full transition-all ${isExpress ? 'left-6' : 'left-1'}`} />
-                </button>
               </div>
             </div>
           </div>
