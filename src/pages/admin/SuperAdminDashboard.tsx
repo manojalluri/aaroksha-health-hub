@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { compressImage } from "@/lib/imageUtils";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Banner, getBanners, saveBanners } from "@/lib/bannersSync";
 import { getLocalDoctors } from "@/lib/doctorsSync";
@@ -372,11 +373,12 @@ const SuperAdminDashboard = () => {
   };
 
   const handleBannerUpload = async (id: string, file: File) => {
-    const loadingToast = toast.loading("Uploading banner image...");
+    const loadingToast = toast.loading("Compressing & uploading banner image...");
     try {
-      const cleanFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+      const compressed = await compressImage(file, 1200, 0.80); // banners need higher res
+      const cleanFileName = compressed.name.replace(/[^a-zA-Z0-9.-]/g, "_");
       const fileName = `banner-${id}-${Date.now()}-${cleanFileName}`;
-      const { data, error } = await supabase.storage.from("banners").upload(fileName, file, { upsert: true });
+      const { data, error } = await supabase.storage.from("banners").upload(fileName, compressed, { upsert: true });
       if (error) throw error;
       const { data: { publicUrl } } = supabase.storage.from("banners").getPublicUrl(data.path);
 

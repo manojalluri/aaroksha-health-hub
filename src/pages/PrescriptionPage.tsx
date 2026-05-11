@@ -11,6 +11,7 @@ import { supabase } from "@/lib/supabase";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/lib/settingsSync";
+import { compressImage } from "@/lib/imageUtils";
 
 const genOrderId = (prefix: string) => {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -130,9 +131,10 @@ const PrescriptionPage = () => {
       try {
         const fileExt = selectedFile.name.split(".").pop();
         const filePath = `prescriptions/${Math.random()}.${fileExt}`;
+        const compressed = await compressImage(selectedFile);
         const { data: uploadData, error: uploadError } = await supabase.storage
           .from("prescriptions")
-          .upload(filePath, selectedFile);
+          .upload(filePath, compressed);
         if (!uploadError && uploadData) {
           const { data: urlData } = supabase.storage.from("prescriptions").getPublicUrl(filePath);
           finalImageUrl = urlData.publicUrl;

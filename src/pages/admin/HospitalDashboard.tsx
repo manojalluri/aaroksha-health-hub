@@ -18,6 +18,7 @@ import {
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { compressImage } from "@/lib/imageUtils";
 import {
   verifyPartnerSession, clearAdminSession, revokePartnerSession,
   getPartnerIdFromSession,
@@ -330,13 +331,14 @@ const HospitalDashboard = () => {
   const uploadImage = async (file: File, isEdit = false) => {
     setUploadingImage(true);
     try {
-      const path = `doctors/${Date.now()}_${file.name.replace(/\s+/g, "_")}`;
-      const { error: upErr } = await supabase.storage.from("doctor_profiles").upload(path, file, { upsert: true });
+      const compressed = await compressImage(file);
+      const path = `doctors/${Date.now()}_${compressed.name.replace(/\s+/g, "_")}`;
+      const { error: upErr } = await supabase.storage.from("doctor_profiles").upload(path, compressed, { upsert: true });
       if (upErr) throw upErr;
       const { data: { publicUrl } } = supabase.storage.from("doctor_profiles").getPublicUrl(path);
       if (isEdit && editingDoctor) setEditingDoctor({ ...editingDoctor, image_url: publicUrl });
       else setNewDoctor(p => ({ ...p, image_url: publicUrl }));
-      toast.success("Image uploaded");
+      toast.success("Image uploaded & compressed");
     } catch (e: any) {
       toast.error("Upload failed: " + e.message);
     } finally {
@@ -419,11 +421,11 @@ const HospitalDashboard = () => {
   const uploadLogo = async (file: File) => {
     try {
       setUploadingLogo(true);
-      const fileExt = file.name.split('.').pop();
-      const fileName = `logos/${partnerId}_logo.${fileExt}`;
+      const compressed = await compressImage(file);
+      const fileName = `logos/${partnerId}_logo.jpg`;
       const { error: uploadError } = await supabase.storage
         .from('doctor_profiles')
-        .upload(fileName, file, { upsert: true });
+        .upload(fileName, compressed, { upsert: true });
 
       if (uploadError) throw uploadError;
 
@@ -441,7 +443,7 @@ const HospitalDashboard = () => {
       if (updateError) throw updateError;
       
       setPartner((prev: any) => ({ ...prev, logo_url: bustedUrl }));
-      toast.success("Hospital logo updated!");
+      toast.success("Hospital logo updated & compressed!");
     } catch (err: any) {
       console.error(err);
       toast.error("Logo upload failed: " + err.message);
