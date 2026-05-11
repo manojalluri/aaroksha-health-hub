@@ -699,19 +699,28 @@ const LogisticsDashboard = () => {
       <Dialog open={!!verifyingOrder} onOpenChange={(open) => !open && setVerifyingOrder(null)}>
         <DialogContent className="max-w-xs rounded-3xl p-6 text-center">
           <DialogHeader>
-            <DialogTitle className="font-black text-xl mb-2">Verify Code</DialogTitle>
+            <DialogTitle className="font-black text-xl mb-2">
+              {verifyingOrder?.type === 'lab' ? '🧪 Enter Collection Code' : '📦 Enter Delivery Code'}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <p className="text-sm text-slate-500 font-medium">
-              Ask the patient for the 6-character {verifyingOrder?.type === 'lab' ? 'collection' : 'delivery'} code shown on their profile.
-            </p>
+            {verifyingOrder?.type === 'lab' ? (
+              <p className="text-sm text-slate-500 font-medium">
+                Ask the <span className="font-black text-slate-700">patient</span> for the 6-character code shown on their booking confirmation. This verifies you have collected the sample from the correct patient.
+              </p>
+            ) : (
+              <p className="text-sm text-slate-500 font-medium">
+                Ask the patient for the 6-character delivery code shown on their profile to complete delivery.
+              </p>
+            )}
             <Input
               value={otpInput}
               onChange={(e) => setOtpInput(e.target.value.toUpperCase())}
               placeholder="e.g. A1B2C3"
-              className="text-center font-black tracking-widest text-lg h-14"
+              className="text-center font-black tracking-widest text-2xl h-16 border-2 border-violet-200 bg-violet-50 text-violet-800"
               maxLength={6}
             />
+            <p className="text-[10px] text-slate-400 font-medium">Code is case-insensitive · 6 characters</p>
           </div>
           <div className="flex gap-3">
             <Button variant="outline" className="flex-1 rounded-2xl" onClick={() => setVerifyingOrder(null)}>
@@ -722,7 +731,7 @@ const LogisticsDashboard = () => {
               onClick={handleVerifyOtp}
               disabled={otpInput.length < 5 || updateMutation.isPending}
             >
-              {updateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm'}
+              {updateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : verifyingOrder?.type === 'lab' ? 'Confirm Collection' : 'Confirm Delivery'}
             </Button>
           </div>
         </DialogContent>

@@ -532,8 +532,14 @@ const LabDashboard = () => {
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["admin-lab-bookings"] });
       queryClient.invalidateQueries({ queryKey: ["lab-tests"] });
-      toast.success("Booking updated successfully");
-      if (result?.closeDialog) setIsDetailsOpen(false);
+      if (result?.closeDialog) {
+        toast.success("Booking updated successfully");
+        setIsDetailsOpen(false);
+      } else {
+        toast.success("Agent assigned successfully! They will see this task on their Logistics Dashboard.");
+        // Refetch so the modal reflects the new state (assigned banner shows)
+        queryClient.invalidateQueries({ queryKey: ["admin-lab-bookings"] });
+      }
     },
     onError: (err: any) => {
       console.error("Booking Update Error:", err);
@@ -900,15 +906,24 @@ const LabDashboard = () => {
                             {formatBookingId(b)}
                           </td>
                           <td className="py-4">
-                            <p className="text-sm font-bold text-slate-800 leading-none mb-1">
-                              {b.patient_name}
-                            </p>
-                            <p className="text-[11px] text-slate-400 font-medium">
-                              {b.patient_age}y / {b.patient_gender}
-                            </p>
+                            {b.status === 'pending' ? (
+                              <div className="flex items-center gap-1.5">
+                                <div className="h-3.5 w-3.5 rounded bg-slate-200 animate-pulse" />
+                                <span className="text-xs font-bold text-slate-300 italic">Confirm to reveal</span>
+                              </div>
+                            ) : (
+                              <>
+                                <p className="text-sm font-bold text-slate-800 leading-none mb-1">
+                                  {b.patient_name}
+                                </p>
+                                <p className="text-[11px] text-slate-400 font-medium">
+                                  {b.patient_age}y / {b.patient_gender}
+                                </p>
+                              </>
+                            )}
                           </td>
                           <td className="py-4 text-sm text-slate-500 font-medium">
-                            {Array.isArray(b.tests) ? b.tests.length : 1} test(s)
+                            {Array.isArray(b.tests) ? b.tests.map((t: any) => t.name).join(", ").slice(0, 30) + (b.tests.length > 1 ? "..." : "") : "1 test"}
                           </td>
                           <td className="py-4 text-sm text-slate-500 font-medium whitespace-nowrap">
                             {formatDate(b.collection_date, b.collection_time)}
@@ -919,7 +934,6 @@ const LabDashboard = () => {
                             )}
                           </td>
                           <td className="py-4 text-sm font-bold text-slate-800">
-                            {/* Show tests subtotal only - platform fee is Aaroksha's revenue, not the lab's */}
                             ₹{getMerchantSubtotal(b, settings).toLocaleString("en-IN")}
                           </td>
                           <td className="py-4">
@@ -930,6 +944,7 @@ const LabDashboard = () => {
                               onClick={() => {
                                 setSelectedBooking(b);
                                 setSelectedTechnician(b.technician || "");
+                                setSelectedLogisticsPartnerId(b.logistics_partner_id || "");
                                 setCollectionCodeInput("");
                                 setIsDetailsOpen(true);
                               }}
@@ -1596,7 +1611,7 @@ const LabDashboard = () => {
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-400 mb-2">Laboratory Net Settlement</p>
                     <h2 className="text-5xl font-black mb-6">₹{(() => {
                       const billable = bookings.filter(b => {
-                        if (b.status !== "completed") return false;
+                        if (b.status === 'cancelled' || b.status === 'pending') return false;
                         if (settlementFilter === "today") return new Date(b.created_at).toDateString() === new Date().toDateString();
                         if (settlementFilter === "yesterday") {
                           const y = new Date(); y.setDate(y.getDate() - 1);
@@ -1677,13 +1692,14 @@ const LabDashboard = () => {
                           <TableHead className="text-[10px] font-black uppercase">Booking ID</TableHead>
                           <TableHead className="text-[10px] font-black uppercase text-center">Gross Amount</TableHead>
                           <TableHead className="text-[10px] font-black uppercase text-center text-red-500">Platform Comm</TableHead>
+                          <TableHead className="text-[10px] font-black uppercase text-center">Stage</TableHead>
                           <TableHead className="text-[10px] font-black uppercase text-right text-emerald-600">Merchant Net</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {(() => {
                           const filtered = bookings.filter(b => {
-                            if (b.status !== "completed") return false;
+                            if (b.status === 'cancelled' || b.status === 'pending') return false;
                             if (settlementFilter === "today") return new Date(b.created_at).toDateString() === new Date().toDateString();
                             if (settlementFilter === "yesterday") {
                               const y = new Date(); y.setDate(y.getDate() - 1);
@@ -1692,8 +1708,8 @@ const LabDashboard = () => {
                             return true;
                           });
                           if (filtered.length === 0) return (
-                            <TableRow><TableCell colSpan={4} className="text-center py-8 text-slate-400 text-xs font-bold">
-                              No completed bookings for {settlementFilter === "all" ? "any period" : `"${settlementFilter}"`}
+                            <TableRow><TableCell colSpan={5} className="text-center py-8 text-slate-400 text-xs font-bold">
+                              No confirmed bookings for {settlementFilter === "all" ? "any period" : `"${settlementFilter}"`}
                             </TableCell></TableRow>
                           );
                           return filtered.slice(0, 15).map(b => {
@@ -1707,6 +1723,13 @@ const LabDashboard = () => {
                                 <TableCell className="font-mono text-[10px] font-bold text-slate-400">{b.order_id || b.id.slice(0,8).toUpperCase()}</TableCell>
                                 <TableCell className="text-center font-bold text-slate-700 text-xs">₹{total}</TableCell>
                                 <TableCell className="text-center font-bold text-red-500 text-xs">₹{comm.toFixed(2)}</TableCell>
+                                <TableCell className="text-center">
+                                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                                    b.status === 'completed' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-500'
+                                  }`}>
+                                    {b.status === 'completed' ? 'Settled' : b.status.charAt(0).toUpperCase() + b.status.slice(1)}
+                                  </span>
+                                </TableCell>
                                 <TableCell className="text-right font-black text-slate-800 text-xs">₹{(total - comm).toFixed(2)}</TableCell>
                               </TableRow>
                             );
@@ -1874,48 +1897,74 @@ const LabDashboard = () => {
             <div className="px-6 py-4 space-y-5">
               {/* Patient info card */}
               <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 space-y-4">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Patient</p>
-                    <p className="text-base font-extrabold text-slate-900 leading-none">
-                      {selectedBooking?.patient_name}
-                    </p>
-                    <p className="text-xs text-slate-500 font-medium mt-0.5">
-                      {selectedBooking?.patient_age}y, {selectedBooking?.patient_gender}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Phone</p>
-                    <div className="flex items-center gap-1.5 text-sm font-bold text-slate-700">
-                      <Phone className="h-3.5 w-3.5 text-slate-400" />
-                      {selectedBooking?.patient_phone || "9876543210"}
+                {selectedBooking?.status === 'pending' ? (
+                  // LOCKED — show only tests, blur customer details
+                  <div className="flex flex-col items-center justify-center gap-3 py-4">
+                    <div className="h-10 w-10 bg-amber-50 border border-amber-100 rounded-xl flex items-center justify-center">
+                      <AlertCircle className="h-5 w-5 text-amber-500" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm font-black text-slate-700">Customer details are hidden</p>
+                      <p className="text-xs text-slate-400 font-medium mt-0.5">Confirm this booking to reveal patient info and enable agent assignment</p>
+                    </div>
+                    <div className="w-full space-y-2">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Tests Requested</p>
+                      {(selectedBooking?.tests?.length > 0 ? selectedBooking.tests : []).map((t: any, i: number) => (
+                        <div key={i} className="flex justify-between items-center px-3 py-2 bg-white border border-slate-100 rounded-xl">
+                          <span className="text-xs font-bold text-slate-700">{t.name}</span>
+                          <span className="text-xs font-bold text-blue-600">₹{t.price}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                </div>
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Address</p>
-                  <div className="flex items-start gap-1.5 text-sm font-medium text-slate-600">
-                    <MapPin className="h-3.5 w-3.5 text-blue-500 mt-0.5 shrink-0" />
-                    {selectedBooking?.patient_address || "12, MG Road, Hyderabad"}
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Collection</p>
-                    <p className="text-sm font-bold text-slate-800">
-                      {selectedBooking
-                        ? formatDate(selectedBooking.collection_date, selectedBooking.collection_time)
-                        : "-"}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Status</p>
-                    {selectedBooking && <StatusBadge status={selectedBooking.status} />}
-                  </div>
-                </div>
+                ) : (
+                  // REVEALED — full patient details
+                  <>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Patient</p>
+                        <p className="text-base font-extrabold text-slate-900 leading-none">
+                          {selectedBooking?.patient_name}
+                        </p>
+                        <p className="text-xs text-slate-500 font-medium mt-0.5">
+                          {selectedBooking?.patient_age}y, {selectedBooking?.patient_gender}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Phone</p>
+                        <div className="flex items-center gap-1.5 text-sm font-bold text-slate-700">
+                          <Phone className="h-3.5 w-3.5 text-slate-400" />
+                          {selectedBooking?.patient_phone}
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Address</p>
+                      <div className="flex items-start gap-1.5 text-sm font-medium text-slate-600">
+                        <MapPin className="h-3.5 w-3.5 text-blue-500 mt-0.5 shrink-0" />
+                        {selectedBooking?.patient_address}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Collection</p>
+                        <p className="text-sm font-bold text-slate-800">
+                          {selectedBooking
+                            ? formatDate(selectedBooking.collection_date, selectedBooking.collection_time)
+                            : "-"}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Status</p>
+                        {selectedBooking && <StatusBadge status={selectedBooking.status} />}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
 
-              {/* Tests ordered */}
+              {/* Tests ordered — only show separately after confirmation */}
+              {selectedBooking?.status !== 'pending' && (
               <div>
                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Tests Ordered</p>
                 <div className="space-y-2">
@@ -1939,78 +1988,86 @@ const LabDashboard = () => {
                   </span>
                 </div>
               </div>
+              )}
 
-              {/* Assign technician */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">
-                    Assign Technician
-                  </p>
-                  <div className="relative">
+              {/* Assign Sample Collector — only after confirmation */}
+              {selectedBooking?.status !== 'pending' && (
+              <div className="border border-blue-100 bg-blue-50/50 rounded-xl p-3">
+                <p className="text-[9px] font-black uppercase tracking-widest text-blue-400 mb-2">
+                  Assign Collection Agent
+                </p>
+                {/* Show currently assigned */}
+                {selectedBooking?.logistics_partner_id && (
+                  <div className="flex items-center gap-2 mb-2 px-3 py-1.5 bg-emerald-50 border border-emerald-100 rounded-lg">
+                    <UserCheck className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                    <p className="text-xs font-bold text-emerald-700">
+                      {logisticsPartners.find(lp => lp.partner_id === selectedBooking.logistics_partner_id)?.name || selectedBooking.logistics_partner_id}
+                    </p>
+                    <span className="ml-auto text-[9px] font-black text-emerald-400 uppercase">Assigned</span>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
                     <select
-                      value={selectedTechnician}
-                      onChange={(e) => setSelectedTechnician(e.target.value)}
-                      className="w-full h-11 bg-white border border-slate-200 rounded-xl px-4 pr-10 text-xs font-bold text-slate-700 outline-none appearance-none cursor-pointer focus:border-blue-400 transition-all"
+                      value={selectedLogisticsPartnerId}
+                      onChange={(e) => {
+                        setSelectedLogisticsPartnerId(e.target.value);
+                        const lp = logisticsPartners.find(l => l.partner_id === e.target.value);
+                        setSelectedTechnician(lp?.name || "");
+                      }}
+                      className="w-full h-10 bg-white border border-blue-200 rounded-xl px-3 pr-9 text-xs font-bold text-slate-700 outline-none appearance-none cursor-pointer focus:border-blue-400 transition-all"
                     >
-                      <option value="">Select tech</option>
-                      <option>Technician Ravi</option>
-                      <option>Technician Priya</option>
-                      <option>Technician Anil</option>
+                      <option value="">{selectedBooking?.logistics_partner_id ? 'Reassign...' : 'Select agent...'}</option>
+                      {logisticsPartners.map(lp => (
+                        <option key={lp.id} value={lp.partner_id}>{lp.name}</option>
+                      ))}
                     </select>
                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400 pointer-events-none" />
                   </div>
-                </div>
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">
-                    Logistics Partner
-                  </p>
-                  <div className="relative">
-                    <select
-                      value={selectedLogisticsPartnerId}
-                      onChange={(e) => setSelectedLogisticsPartnerId(e.target.value)}
-                      className="w-full h-11 bg-indigo-50 border border-indigo-100 rounded-xl px-4 pr-10 text-xs font-bold text-indigo-700 outline-none appearance-none cursor-pointer focus:border-indigo-400 transition-all"
-                    >
-                      <option value="">Select Partner</option>
-                        {logisticsPartners.map(lp => (
-                          <option key={lp.id} value={lp.partner_id}>{lp.name}</option>
-                        ))}
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-3 w-3 text-indigo-400 pointer-events-none" />
-                  </div>
-                  {selectedLogisticsPartnerId && selectedLogisticsPartnerId !== (selectedBooking?.logistics_partner_id || "") && (
-                    <p className="text-[9px] font-bold text-indigo-500 mt-1">⚠ Unsaved – will apply on Confirm</p>
-                  )}
+                  <button
+                    onClick={() => {
+                      if (!selectedLogisticsPartnerId) { toast.error("Please select a collection agent"); return; }
+                      const code = selectedBooking?.collection_code || Array.from({length:6},()=>"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random()*32)]).join("");
+                      updateBookingMutation.mutate({
+                        id: selectedBooking?.id,
+                        updates: {
+                          logistics_partner_id: selectedLogisticsPartnerId,
+                          technician: selectedTechnician,
+                          collection_code: code,
+                          status: selectedBooking?.status === 'pending' ? 'confirmed' : selectedBooking?.status
+                        },
+                        closeDialog: false
+                      });
+                    }}
+                    disabled={updateBookingMutation.isPending || !selectedLogisticsPartnerId}
+                    className="h-10 px-4 bg-blue-600 text-white text-xs font-black rounded-xl hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50 shrink-0 flex items-center gap-1.5"
+                  >
+                    <UserCheck className="h-3.5 w-3.5" /> Assign
+                  </button>
                 </div>
               </div>
-
-              {/* Action buttons */}
-              {selectedBooking?.collection_code && selectedBooking.status !== "collected" && selectedBooking.status !== "completed" && (
-                <div className="pt-2">
-                  <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">
-                    Verify Collection Code
-                  </Label>
-                  <Input 
-                    placeholder="Enter 6-digit code from patient" 
-                    value={collectionCodeInput}
-                    onChange={(e) => setCollectionCodeInput(e.target.value.toUpperCase())}
-                    className="h-11 border-2 border-violet-200 bg-violet-50 text-center font-black tracking-widest uppercase text-violet-800"
-                    maxLength={6}
-                  />
-                </div>
               )}
 
               <div className="space-y-3 pt-2">
+                {/* Status flow: Confirm → Sample Received → Processing → Complete */}
+                <div className="flex items-center gap-2 px-1 pb-1">
+                  {["pending","confirmed","collected","processing","completed"].map((s, i, arr) => (
+                    <div key={s} className="flex items-center gap-2 flex-1">
+                      <div className={`h-1.5 flex-1 rounded-full ${
+                        selectedBooking && arr.indexOf(selectedBooking.status) >= i
+                          ? "bg-blue-400" : "bg-slate-100"
+                      }`} />
+                    </div>
+                  ))}
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     onClick={() => {
-                      const updates: any = {
-                        status: "confirmed",
-                        technician: selectedTechnician || selectedBooking?.technician,
-                      };
-                      if (selectedLogisticsPartnerId) {
-                        updates.logistics_partner_id = selectedLogisticsPartnerId;
-                      }
-                      updateBookingMutation.mutate({ id: selectedBooking?.id, updates });
+                      updateBookingMutation.mutate({
+                        id: selectedBooking?.id,
+                        updates: { status: "confirmed" }
+                      });
                     }}
                     disabled={updateBookingMutation.isPending || selectedBooking?.status !== 'pending'}
                     className="h-11 rounded-xl bg-blue-600 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md shadow-blue-200 hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-60"
@@ -2020,10 +2077,6 @@ const LabDashboard = () => {
 
                   <button
                     onClick={() => {
-                      if (selectedBooking?.collection_code && collectionCodeInput !== selectedBooking.collection_code) {
-                        toast.error("Invalid collection code. Ask the patient for the code shown in their profile.");
-                        return;
-                      }
                       updateBookingMutation.mutate({
                         id: selectedBooking?.id,
                         updates: { status: "collected" },
@@ -2032,7 +2085,7 @@ const LabDashboard = () => {
                     disabled={updateBookingMutation.isPending || selectedBooking?.status !== 'confirmed'}
                     className="h-11 rounded-xl bg-violet-600 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md shadow-violet-200 hover:bg-violet-700 transition-all active:scale-95 disabled:opacity-60"
                   >
-                    <Activity className="h-4 w-4" /> Verify & Collected
+                    <Activity className="h-4 w-4" /> Sample Received
                   </button>
                 </div>
 
