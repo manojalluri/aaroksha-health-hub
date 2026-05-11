@@ -243,7 +243,7 @@ const ProfilePage = () => {
       // STRICT ISOLATION: Fetch strictly by user_id
       const apptQuery = supabase
         .from("appointments")
-        .select("*, doctors(name, specialty)")
+        .select("*, doctors(name, specialty, hospital_name)")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
@@ -542,10 +542,10 @@ const ProfilePage = () => {
                             <div className="grid grid-cols-2 gap-y-3 gap-x-4 mb-4">
                               <div>
                                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Hospital</p>
-                                <p className="text-xs font-bold text-slate-700">{appt.hospital_name || "Not Specified"}</p>
+                                <p className="text-xs font-bold text-slate-700">{appt.hospital_name || (appt as any).doctors?.hospital_name || "Aaroksha Partner"}</p>
                               </div>
                               <div>
-                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Amount Paid</p>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Amount to Pay</p>
                                 <p className="text-xs font-bold text-slate-700 flex items-center gap-1">
                                   <IndianRupee className="h-3 w-3" />
                                   {appt.fee || appt.consultation_fee || "N/A"}

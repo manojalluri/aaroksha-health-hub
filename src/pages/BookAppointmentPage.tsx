@@ -156,6 +156,7 @@ const BookAppointmentPage = () => {
         p_consultation_fee: Number(doctor?.fee || doctor?.consultationFee || 0),
         p_platform_fee: PLATFORM_FEE,
         p_hospital_partner_id: doctor?.partner_id || doctor?.hospital_id,
+        p_hospital_name: doctor?.hospital_name || "Aaroksha Partner",
         p_verification_code: vCode
       });
 
@@ -203,6 +204,7 @@ const BookAppointmentPage = () => {
           consultation_fee: Number(doctor?.fee || doctor?.consultationFee || 0),
           platform_fee: PLATFORM_FEE,
           hospital_partner_id: doctor?.partner_id || doctor?.hospital_id,
+          hospital_name: doctor?.hospital_name || "Aaroksha Partner",
           partner_id: doctor?.partner_id || doctor?.hospital_id,
           status: "pending",
           verification_code: vCode

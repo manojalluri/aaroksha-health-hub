@@ -305,6 +305,7 @@ const LabDashboard = () => {
   // ── Scheduling State ────────────────────────────────────────────────────────
   const [bookingWindow, setBookingWindow] = useState(7);
   const [selectedSlots, setSelectedSlots] = useState<string[]>(["09:00 AM", "10:00 AM", "11:00 AM", "02:00 PM", "03:00 PM", "04:00 PM"]);
+  const [customSlotInput, setCustomSlotInput] = useState("");
   const [holidays, setHolidays] = useState<string[]>([]);
   const [holidayInput, setHolidayInput] = useState("");
 
@@ -1805,7 +1806,7 @@ const LabDashboard = () => {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 mb-8">
                       {allTimeSlots.map(slot => {
                         const active = selectedSlots.includes(slot);
                         return (
@@ -1825,6 +1826,56 @@ const LabDashboard = () => {
                           </button>
                         );
                       })}
+                    </div>
+
+                    {/* Custom Slot Addition */}
+                    <div className="pt-6 border-t border-slate-50">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Create Custom Time Slot</p>
+                      <div className="flex gap-3 max-w-sm">
+                        <div className="relative flex-1">
+                          <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-300" />
+                          <input 
+                            placeholder="e.g. 06:45 AM"
+                            value={customSlotInput}
+                            onChange={(e) => setCustomSlotInput(e.target.value)}
+                            className="w-full h-11 pl-10 pr-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:bg-white focus:border-blue-400 outline-none transition-all"
+                          />
+                        </div>
+                        <button 
+                          onClick={() => {
+                            if (!customSlotInput) return;
+                            if (selectedSlots.includes(customSlotInput)) {
+                              toast.error("Slot already exists");
+                              return;
+                            }
+                            setSelectedSlots(prev => [...prev, customSlotInput].sort((a, b) => {
+                              // Basic AM/PM sort
+                              const timeA = new Date("2000/01/01 " + a);
+                              const timeB = new Date("2000/01/01 " + b);
+                              return timeA.getTime() - timeB.getTime();
+                            }));
+                            setCustomSlotInput("");
+                            toast.success("Custom slot added");
+                          }}
+                          className="px-4 rounded-xl bg-slate-800 text-white text-[10px] font-black uppercase tracking-widest hover:bg-slate-700 transition-all active:scale-95"
+                        >
+                          Add Slot
+                        </button>
+                      </div>
+                      
+                      {/* Display custom selected slots that aren't in defaults */}
+                      {selectedSlots.filter(s => !allTimeSlots.includes(s)).length > 0 && (
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {selectedSlots.filter(s => !allTimeSlots.includes(s)).map(slot => (
+                            <div key={slot} className="flex items-center gap-1 bg-blue-50 border border-blue-100 text-blue-700 px-3 py-1.5 rounded-lg text-[10px] font-black">
+                              {slot}
+                              <button onClick={() => setSelectedSlots(prev => prev.filter(s => s !== slot))} className="hover:text-red-500">
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 
