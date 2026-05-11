@@ -59,10 +59,10 @@ const PrescriptionPage = () => {
 
   // Pharmacist result
   const [medicines, setMedicines] = useState<Medicine[]>([]);
+  // Customer-modified medicines (removals only)
+  const [activeMedicines, setActiveMedicines] = useState<Medicine[]>([]);
   const [prescriptionRecord, setPrescriptionRecord] = useState<PrescriptionRecord | null>(null);
   const [prescriptionId, setPrescriptionId] = useState<string | null>(null);
-
-
 
   const [isUploading, setIsUploading] = useState(false);
   const [confirmedOrderId, setConfirmedOrderId] = useState("");
@@ -174,7 +174,9 @@ const PrescriptionPage = () => {
 
       if (data.status === "reviewed" && data.medicines) {
         clearInterval(interval);
-        setMedicines(data.medicines as Medicine[]);
+        const meds = data.medicines as Medicine[];
+        setMedicines(meds);
+        setActiveMedicines(meds.filter(m => m.available)); // start with all available
         setPrescriptionRecord(data as PrescriptionRecord);
         setStep("review");
         setIsUploading(false);
@@ -217,8 +219,11 @@ const PrescriptionPage = () => {
   // Calculated totals
   const { settings } = useSettings();
 
+  // Use customer-modified list for totals in review step
   const availableMeds = medicines.filter((m) => m.available);
-  const prescriptionTotal = availableMeds.reduce((s, m) => s + m.price, 0);
+  // activeMedicines = what customer has chosen to keep (removes excluded)
+  const activeTotal = activeMedicines.reduce((s, m) => s + m.price * (m.qty || 1), 0);
+  const prescriptionTotal = activeTotal > 0 ? activeTotal : availableMeds.reduce((s, m) => s + m.price * (m.qty || 1), 0);
   
   // Use admin provided fees if available (in review step), else use settings
   const PLATFORM_FEE = prescriptionRecord?.platform_fee ? Number(prescriptionRecord.platform_fee) : Number(settings?.pharm_fee);
@@ -229,6 +234,18 @@ const PrescriptionPage = () => {
   
   const subTotal = prescriptionTotal;
   const grandTotal = subTotal > 0 ? subTotal + deliveryFee + PLATFORM_FEE : 0;
+
+  const removeFromOrder = (medName: string) => {
+    setActiveMedicines(prev => prev.filter(m => m.name !== medName));
+    toast.success(`${medName} removed from order`);
+  };
+
+  const restoreToOrder = (med: Medicine) => {
+    setActiveMedicines(prev => [...prev, med]);
+    toast.success(`${med.name} added back`);
+  };
+
+  const removedMeds = medicines.filter(m => m.available && !activeMedicines.find(a => a.name === m.name));
 
   const bottomNav = [
     { icon: Home, label: "Home", to: "/" },
@@ -467,6 +484,8 @@ const PrescriptionPage = () => {
                                 setMainTab("upload_flow");
                                 setPrescriptionId(order.id);
                                 setMedicines(meds);
+                                const available = meds.filter((m: Medicine) => m.available);
+                                setActiveMedicines(available);
                                 setPrescriptionRecord(order as PrescriptionRecord);
                                 setConfirmedOrderId(order.order_id || "");
                                 setAddress(order.delivery_address || "");
@@ -719,40 +738,90 @@ const PrescriptionPage = () => {
             </div>
           </div>
 
-          {/* Prescription medicines from pharmacist */}
+          {/* Prescription medicines from pharmacist — customer can remove */}
           <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-50">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Prescribed Medicines</p>
+            <div className="px-4 py-3 border-b border-slate-50 flex items-center justify-between">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Your Medicines</p>
+              <span className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded-lg">
+                {activeMedicines.length} of {medicines.filter(m => m.available).length} selected
+              </span>
             </div>
             <div className="divide-y divide-slate-50">
-              {medicines.map((med, i) => (
-                <div key={i} className={`flex items-center justify-between px-4 py-3.5 ${!med.available ? "opacity-50" : ""}`}>
+              {/* Available medicines — customer can remove */}
+              {medicines.filter(m => m.available).map((med, i) => {
+                const isActive = activeMedicines.some(a => a.name === med.name);
+                return (
+                  <div key={i} className={`flex items-center justify-between px-4 py-3.5 transition-all ${
+                    !isActive ? "opacity-40 bg-slate-50" : ""
+                  }`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`h-9 w-9 rounded-xl flex items-center justify-center transition-colors ${
+                        isActive ? "bg-green-100" : "bg-slate-100"
+                      }`}>
+                        <Package className={`h-4 w-4 ${isActive ? "text-green-600" : "text-slate-400"}`} />
+                      </div>
+                      <div>
+                        <p className={`text-sm font-black ${isActive ? "text-slate-800" : "text-slate-400 line-through"}`}>{med.name}</p>
+                        <p className="text-[10px] font-bold text-slate-400">{med.dosage} · Qty: {med.qty || 1}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-right">
+                        <p className={`font-black text-sm ${isActive ? "text-slate-800" : "text-slate-300"}`}>₹{med.price * (med.qty || 1)}</p>
+                        <p className="text-[9px] font-black text-green-500 uppercase">In Stock</p>
+                      </div>
+                      {isActive ? (
+                        <button
+                          onClick={() => removeFromOrder(med.name)}
+                          className="h-8 w-8 rounded-xl bg-red-50 border border-red-100 flex items-center justify-center text-red-400 hover:bg-red-100 hover:text-red-600 transition-all active:scale-95"
+                          title="Remove this medicine"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => restoreToOrder(med)}
+                          className="h-8 w-8 rounded-xl bg-green-50 border border-green-100 flex items-center justify-center text-green-500 hover:bg-green-100 transition-all active:scale-95"
+                          title="Add back"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {/* Unavailable medicines — always shown, cannot be added */}
+              {medicines.filter(m => !m.available).map((med, i) => (
+                <div key={`na-${i}`} className="flex items-center justify-between px-4 py-3.5 opacity-40">
                   <div className="flex items-center gap-3">
-                    <div className={`h-9 w-9 rounded-xl flex items-center justify-center ${med.available ? "bg-green-100" : "bg-slate-100"}`}>
-                      <Package className={`h-4 w-4 ${med.available ? "text-green-600" : "text-slate-400"}`} />
+                    <div className="h-9 w-9 rounded-xl bg-slate-100 flex items-center justify-center">
+                      <Package className="h-4 w-4 text-slate-400" />
                     </div>
                     <div>
-                      <p className="text-sm font-black text-slate-800">{med.name}</p>
+                      <p className="text-sm font-black text-slate-400 line-through">{med.name}</p>
                       <p className="text-[10px] font-bold text-slate-400">{med.dosage}</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    {med.available ? (
-                      <>
-                        <p className="font-black text-slate-800 text-sm">₹{med.price}</p>
-                        <p className="text-[9px] font-black text-green-500 uppercase">In Stock</p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="font-black text-slate-400 text-sm">₹{med.price}</p>
-                        <p className="text-[9px] font-black text-red-500 uppercase">Out of Stock</p>
-                      </>
-                    )}
+                    <p className="font-black text-slate-300 text-sm">₹{med.price}</p>
+                    <p className="text-[9px] font-black text-red-400 uppercase">Out of Stock</p>
                   </div>
                 </div>
               ))}
             </div>
           </div>
+
+          {/* Removed items notice */}
+          {removedMeds.length > 0 && (
+            <div className="bg-amber-50 border border-amber-100 rounded-2xl px-4 py-3 flex items-start gap-3">
+              <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-black text-amber-700">Removed from order:</p>
+                <p className="text-[10px] font-medium text-amber-600 mt-0.5">{removedMeds.map(m => m.name).join(', ')}</p>
+              </div>
+            </div>
+          )}
 
           {/* Bill Summary */}
           <div className="bg-white rounded-2xl border border-slate-100 p-4">
@@ -790,52 +859,65 @@ const PrescriptionPage = () => {
             </div>
           </div>
 
-          <button
-            onClick={async () => {
-              if (isUploading) return;
-              setIsUploading(true);
-              const transactionId = `MED_TXN_${Date.now()}`;
+          {activeMedicines.length === 0 ? (
+            <div className="bg-red-50 border border-red-100 rounded-2xl p-4 text-center">
+              <p className="text-sm font-black text-red-600">No medicines selected</p>
+              <p className="text-xs text-red-400 mt-1">Add at least one medicine to place your order</p>
+            </div>
+          ) : (
+            <button
+              onClick={async () => {
+                if (isUploading) return;
+                if (activeMedicines.length === 0) { toast.error("Select at least one medicine"); return; }
+                setIsUploading(true);
+                const transactionId = `MED_TXN_${Date.now()}`;
 
-              // Generate unique 6-char delivery code
-              const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-              const code = Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+                // Generate unique 6-char delivery code
+                const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+                const code = Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 
-              try {
-                // Update Supabase record with final medicines and order totals
-                const { error: updateError } = await supabase
-                  .from("prescriptions")
-                  .update({
-                    medicines: [...medicines],
-                    sub_total: subTotal,
-                    platform_fee: PLATFORM_FEE,
-                    grand_total: grandTotal,
-                    status: "paid", 
-                    payment_status: "paid",
-                    delivery_code: code,
-                  })
-                  .eq("id", prescriptionId);
+                try {
+                  // Save CUSTOMER-MODIFIED medicine list and recalculated totals
+                  const finalMeds = [
+                    ...activeMedicines, // kept by customer
+                    ...medicines.filter(m => !m.available) // always include unavailable for record
+                  ];
+                  const { error: updateError } = await supabase
+                    .from("prescriptions")
+                    .update({
+                      medicines: finalMeds,
+                      sub_total: subTotal,
+                      platform_fee: PLATFORM_FEE,
+                      delivery_fee: deliveryFee,
+                      grand_total: grandTotal,
+                      status: "paid",
+                      payment_status: "paid",
+                      delivery_code: code,
+                    })
+                    .eq("id", prescriptionId);
 
-                if (updateError) throw updateError;
+                  if (updateError) throw updateError;
 
-                // Handle payment simulation
-                toast.loading("Processing your order...", { duration: 1500 });
-                await new Promise(r => setTimeout(r, 1500));
+                  // Handle payment simulation
+                  toast.loading("Processing payment...", { duration: 1500 });
+                  await new Promise(r => setTimeout(r, 1500));
 
-                toast.success("Order placed successfully! Secure ID: " + transactionId);
-                setDeliveryCode(code);
-                setStep("confirmed");
-              } catch (err) {
-                console.error(err);
-                toast.error("Order failed: " + (err instanceof Error ? err.message : "Unknown error"));
-              } finally {
-                setIsUploading(false);
-              }
-            }}
-            disabled={isUploading}
-            className="w-full rounded-2xl bg-green-600 py-4 text-sm font-black text-white shadow-xl shadow-green-200 active:scale-[0.99] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {isUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <>Pay ₹{grandTotal} & Place Order →</>}
-          </button>
+                  toast.success("Order placed! Medicines being prepared. ID: " + transactionId);
+                  setDeliveryCode(code);
+                  setStep("confirmed");
+                } catch (err) {
+                  console.error(err);
+                  toast.error("Order failed: " + (err instanceof Error ? err.message : "Unknown error"));
+                } finally {
+                  setIsUploading(false);
+                }
+              }}
+              disabled={isUploading}
+              className="w-full rounded-2xl bg-green-600 py-4 text-sm font-black text-white shadow-xl shadow-green-200 active:scale-[0.99] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {isUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <>Pay ₹{grandTotal} & Place Order →</>}
+            </button>
+          )}
         </main>
       )}
 

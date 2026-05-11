@@ -55,18 +55,22 @@ interface PrescriptionOrder {
 const statusStyle: Record<string, string> = {
   pending:    "bg-amber-100 text-amber-700 border-amber-200",
   reviewed:   "bg-blue-100 text-blue-700 border-blue-200",
+  paid:       "bg-violet-100 text-violet-700 border-violet-200",
   dispatched: "bg-orange-100 text-orange-700 border-orange-200",
   collected:  "bg-indigo-100 text-indigo-700 border-indigo-200",
   completed:  "bg-emerald-100 text-emerald-700 border-emerald-200",
   rejected:   "bg-red-100 text-red-600 border-red-200",
+  cancelled:  "bg-slate-100 text-slate-500 border-slate-200",
 };
 const statusLabel: Record<string, string> = {
   pending:    "Review Pending",
   reviewed:   "Pricing Sent",
-  dispatched: "Ready for Pickup",
+  paid:       "Paid — Ready to Dispatch",
+  dispatched: "Dispatched",
   collected:  "Out for Delivery",
   completed:  "Delivered",
   rejected:   "Rejected",
+  cancelled:  "Cancelled",
 };
 
 const PharmacyDashboard = () => {
@@ -179,7 +183,13 @@ const PharmacyDashboard = () => {
     const matchSearch =
       (o.patient_name || "").toLowerCase().includes(search.toLowerCase()) ||
       (o.order_id || o.id).toLowerCase().includes(search.toLowerCase());
-    const matchStatus = statusFilter === "all" || o.status === statusFilter;
+    // 'paid' filter: show orders with payment_status=paid OR status=paid
+    const isPaidReady = o.payment_status === "paid" || o.status === "paid";
+    const matchStatus = statusFilter === "all"
+      ? true
+      : statusFilter === "paid"
+      ? isPaidReady && o.status !== "dispatched" && o.status !== "collected" && o.status !== "completed"
+      : o.status === statusFilter;
     return matchSearch && matchStatus;
   });
 
@@ -214,10 +224,10 @@ const PharmacyDashboard = () => {
   // ─── Stats ──────────────────────────────────────────────────────────────
   const stats = [
     { label: "New Requests", value: orders.filter(o => o.status === "pending" && !o.partner_id).length, color: "text-amber-600", bg: "bg-amber-50", icon: FileText },
-    { label: "Our Queue", value: orders.filter(o => o.partner_id === partner?.partner_id && ["reviewed"].includes(o.status)).length, color: "text-blue-600", bg: "bg-blue-50", icon: Clock },
-    { label: "Ready for Pickup", value: orders.filter(o => o.partner_id === partner?.partner_id && ["dispatched"].includes(o.status)).length, color: "text-orange-600", bg: "bg-orange-50", icon: Package },
+    { label: "Pricing Sent", value: orders.filter(o => o.partner_id === partner?.partner_id && o.status === "reviewed").length, color: "text-blue-600", bg: "bg-blue-50", icon: Clock },
+    { label: "Paid — Dispatch Now", value: orders.filter(o => o.partner_id === partner?.partner_id && (o.status === "paid" || (o.status === "reviewed" && o.payment_status === "paid"))).length, color: "text-violet-600", bg: "bg-violet-50", icon: Truck },
+    { label: "Dispatched", value: orders.filter(o => o.partner_id === partner?.partner_id && ["dispatched","collected"].includes(o.status)).length, color: "text-orange-600", bg: "bg-orange-50", icon: Package },
     { label: "Delivered", value: orders.filter(o => (o.partner_id === partner?.partner_id || (!o.partner_id && o.status === 'completed')) && o.status === "completed").length, color: "text-emerald-600", bg: "bg-emerald-50", icon: CheckCircle },
-    { label: "Revenue", value: `₹${(revenueData?.total || 0).toLocaleString("en-IN")}`, color: "text-emerald-600", bg: "bg-emerald-50", icon: IndianRupee },
   ];
 
   // ─── Open review modal ────────────────────────────────────────────────────
@@ -272,14 +282,10 @@ const PharmacyDashboard = () => {
       updates.logistics_partner_id = selectedLogisticsPartnerId;
     }
     updateMutation.mutate({ id, updates });
-    toast.success(`Order dispatched${selectedLogisticsPartnerId ? ' & assigned to logistics partner' : ''}`);
+    toast.success(`Order dispatched${selectedLogisticsPartnerId ? ' & assigned to delivery partner' : ''}`);
   };
 
-  const handleMarkDelivered = (id: string, correctCode?: string) => {
-    if (correctCode && deliveryCodeInput !== correctCode) {
-      toast.error("Invalid delivery code. Ask the patient for the code shown in their profile.");
-      return;
-    }
+  const handleMarkDelivered = (id: string) => {
     updateMutation.mutate({ id, updates: { status: "completed" } });
     toast.success(`Order marked as delivered`);
   };
@@ -385,7 +391,7 @@ const PharmacyDashboard = () => {
                     <Input placeholder="Search orders..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 w-56" />
                   </div>
                   <div className="flex gap-2 flex-wrap">
-                    {["all", "pending", "reviewed", "dispatched", "completed", "rejected"].map(s => (
+                    {["all", "pending", "reviewed", "paid", "dispatched", "collected", "completed", "rejected"].map(s => (
                       <button key={s} onClick={() => setStatusFilter(s)}
                         className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all capitalize border ${statusFilter === s ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-500 border-slate-200 hover:border-emerald-300"}`}>
                         {s === "all" ? "All" : statusLabel[s] || s}
@@ -433,37 +439,42 @@ const PharmacyDashboard = () => {
                             </span>
                           </TableCell>
                           <TableCell>
-                            <div className="flex gap-1">
+                            <div className="flex gap-1 flex-wrap">
                               <Button variant="ghost" size="sm" onClick={() => openReview(order)}>
-                                <Eye className="h-4 w-4 mr-1" /> Review
+                                <Eye className="h-4 w-4 mr-1" /> View
                               </Button>
                               
-                              {order.status === "reviewed" && (
-                                <div className="flex flex-col gap-1">
-                                  {order.payment_status === "paid" ? (
-                                    <Button size="sm" className="bg-orange-500 hover:bg-orange-600 text-white h-8 text-xs" onClick={() => handleDispatch(order.id)}>
-                                      <Truck className="h-3 w-3 mr-1" /> Dispatch
-                                    </Button>
-                                  ) : (
-                                    <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded text-center">
-                                      Waiting for Payment
-                                    </span>
-                                  )}
-                                </div>
-                              )}
-
-                              {order.status === "dispatched" && (
-                                <span className="text-[10px] font-bold text-orange-600 bg-orange-50 border border-orange-200 px-2 py-1 rounded">
-                                  Ready for Pickup
+                              {/* Pending: no dispatch, just review */}
+                              {order.status === "pending" && (
+                                <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded">
+                                  Awaiting Pricing
                                 </span>
                               )}
 
+                              {/* Reviewed but not paid: waiting for customer payment */}
+                              {order.status === "reviewed" && order.payment_status !== "paid" && (
+                                <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                                  Awaiting Payment
+                                </span>
+                              )}
+
+                              {/* Paid (via reviewed+paid or status=paid): Show dispatch button */}
+                              {(order.status === "paid" || (order.status === "reviewed" && order.payment_status === "paid")) && (
+                                <Button size="sm" className="bg-violet-600 hover:bg-violet-700 text-white h-8 text-xs" onClick={() => openReview(order)}>
+                                  <Truck className="h-3 w-3 mr-1" /> Dispatch
+                                </Button>
+                              )}
+
+                              {/* Dispatched: show status badge */}
+                              {order.status === "dispatched" && (
+                                <span className="text-[10px] font-bold text-orange-600 bg-orange-50 border border-orange-200 px-2 py-1 rounded">
+                                  Out for Delivery
+                                </span>
+                              )}
+
+                              {/* Collected: allow marking delivered */}
                               {order.status === "collected" && (
-                                <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs" onClick={() => {
-                                  setSelectedOrder(order);
-                                  setDeliveryCodeInput("");
-                                  setReviewDialogOpen(true);
-                                }}>
+                                <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs" onClick={() => handleMarkDelivered(order.id)}>
                                   <Package className="h-3 w-3 mr-1" /> Delivered
                                 </Button>
                               )}
@@ -549,7 +560,10 @@ const PharmacyDashboard = () => {
                     <h2 className="text-5xl font-black mb-6">₹{(() => {
                       const billable = orders.filter(o => {
                         if (o.partner_id !== partner?.partner_id && (o.partner_id || o.status !== 'completed')) return false;
-                        if (o.status !== "completed") return false;
+                        // Count from paid onwards (not just completed)
+                        const isPaid = o.payment_status === "paid" || o.status === "paid";
+                        const isActive = ["paid","dispatched","collected","completed"].includes(o.status) || isPaid;
+                        if (!isActive) return false;
                         if (settlementFilter === "today") return new Date(o.created_at).toDateString() === new Date().toDateString();
                         if (settlementFilter === "yesterday") {
                           const y = new Date(); y.setDate(y.getDate() - 1);
@@ -557,12 +571,9 @@ const PharmacyDashboard = () => {
                         }
                         return true;
                       });
-                      // Base settlement on medicines subtotal only
                       const total = billable.reduce((s, o) => s + (o.sub_total || 0), 0);
                       const rate = partner?.commission_rate || 15;
-                      const comm = partner?.commission_type === "fixed"
-                        ? billable.length * rate
-                        : (total * rate) / 100;
+                      const comm = partner?.commission_type === "fixed" ? billable.length * rate : (total * rate) / 100;
                       return (total - comm).toLocaleString("en-IN");
                     })()}</h2>
                   </div>
@@ -807,37 +818,9 @@ const PharmacyDashboard = () => {
                   rows={2} disabled={!["pending"].includes(selectedOrder.status)} />
               </div>
 
-              {/* Payment status notice */}
-              {selectedOrder.status === "reviewed" && (
-                <div className="flex items-center gap-3 p-4 rounded-xl bg-violet-50 border border-violet-200">
-                  <MessageCircle className="h-5 w-5 text-violet-600 shrink-0" />
-                  <div>
-                    <p className="text-sm font-bold text-violet-800">Waiting for Patient Payment</p>
-                    <p className="text-xs text-violet-600">
-                      Total ₹{selectedOrder.grand_total} has been communicated. Patient must pay to proceed.
-                      {selectedOrder.payment_status === "paid" && " ✅ Payment received!"}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {selectedOrder.status === "dispatched" && selectedOrder.delivery_code && (
-                <div className="pt-2">
-                  <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">
-                    Verify Delivery Code
-                  </Label>
-                  <Input 
-                    placeholder="Enter 6-digit code from patient" 
-                    value={deliveryCodeInput}
-                    onChange={(e) => setDeliveryCodeInput(e.target.value.toUpperCase())}
-                    className="h-11 border-2 border-emerald-200 bg-emerald-50 text-center font-black tracking-widest uppercase text-emerald-800"
-                    maxLength={6}
-                  />
-                </div>
-              )}
-
               {/* Action buttons */}
               <div className="space-y-2">
+                {/* Step 1: Review Pending — show send pricing button */}
                 {selectedOrder.status === "pending" && (
                   <div className="flex gap-2">
                     <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleSendPricing} disabled={updateMutation.isPending}>
@@ -848,41 +831,90 @@ const PharmacyDashboard = () => {
                     </Button>
                   </div>
                 )}
-                {selectedOrder.status === "reviewed" && selectedOrder.payment_status === "paid" && (
-                  <div className="space-y-2">
-                    {/* Logistics Partner Assignment */}
-                    <div className="p-3 rounded-xl bg-orange-50 border border-orange-100">
-                      <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-2">
-                        Assign Logistics Partner (optional)
-                      </p>
+
+                {/* Step 2: Pricing sent — waiting for payment */}
+                {selectedOrder.status === "reviewed" && selectedOrder.payment_status !== "paid" && (
+                  <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
+                    <Clock className="h-5 w-5 text-amber-600 shrink-0" />
+                    <div>
+                      <p className="text-sm font-black text-amber-800">Waiting for Customer Payment</p>
+                      <p className="text-xs text-amber-600">Total ₹{selectedOrder.grand_total} sent. Order will unlock for dispatch after payment.</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 3: PAID — Show dispatch + delivery partner assignment */}
+                {(selectedOrder.status === "paid" || (selectedOrder.status === "reviewed" && selectedOrder.payment_status === "paid")) && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+                      <CheckCircle className="h-5 w-5 text-emerald-600 shrink-0" />
+                      <div>
+                        <p className="text-sm font-black text-emerald-800">✅ Payment Received — Ready to Dispatch</p>
+                        <p className="text-xs text-emerald-600">Amount: ₹{selectedOrder.grand_total} · Assign a delivery partner below</p>
+                      </div>
+                    </div>
+
+                    {/* Delivery Partner Assignment */}
+                    <div className="p-4 rounded-xl bg-violet-50 border border-violet-100 space-y-3">
+                      <p className="text-[10px] font-black text-violet-600 uppercase tracking-widest">Assign Delivery Partner</p>
                       <select
                         value={selectedLogisticsPartnerId}
                         onChange={(e) => setSelectedLogisticsPartnerId(e.target.value)}
-                        className="w-full h-10 bg-white border border-orange-200 rounded-xl px-3 text-xs font-bold text-slate-700 outline-none appearance-none cursor-pointer focus:border-orange-400 transition-all"
+                        className="w-full h-10 bg-white border border-violet-200 rounded-xl px-3 text-xs font-bold text-slate-700 outline-none appearance-none cursor-pointer focus:border-violet-400 transition-all"
                       >
-                        <option value="">-- No logistics partner --</option>
+                        <option value="">-- No delivery partner (self-dispatch) --</option>
                         {logisticsPartners.map((lp: any) => (
                           <option key={lp.id} value={lp.partner_id}>{lp.name}</option>
                         ))}
                       </select>
                       {logisticsPartners.length === 0 && (
-                        <p className="text-[9px] text-slate-400 mt-1">No active pharmacy logistics partners found.</p>
+                        <p className="text-[9px] text-slate-400">No active pharmacy logistics partners configured in Super Admin.</p>
+                      )}
+                      {selectedLogisticsPartnerId && (
+                        <div className="flex items-center gap-2 text-[10px] font-bold text-violet-600">
+                          <CheckCircle className="h-3 w-3" />
+                          Partner assigned — they will see this order in their Logistics Dashboard
+                        </div>
                       )}
                     </div>
+
                     <Button
-                      className="w-full bg-orange-500 hover:bg-orange-600"
+                      className="w-full bg-violet-600 hover:bg-violet-700 font-black text-white h-12"
                       onClick={() => handleDispatch(selectedOrder.id)}
                       disabled={updateMutation.isPending}
                     >
                       <Truck className="h-4 w-4 mr-2" />
-                      {selectedLogisticsPartnerId ? "Dispatch & Assign Logistics" : "Mark as Dispatched"}
+                      {selectedLogisticsPartnerId ? "Dispatch & Assign Delivery Partner" : "Mark as Dispatched"}
                     </Button>
                   </div>
                 )}
+
+                {/* Step 4: Dispatched — show tracking info */}
                 {selectedOrder.status === "dispatched" && (
-                  <Button className="w-full bg-emerald-600 hover:bg-emerald-700 font-bold" onClick={() => handleMarkDelivered(selectedOrder.id, selectedOrder.delivery_code)} disabled={updateMutation.isPending}>
-                    <Package className="h-4 w-4 mr-2" /> {selectedOrder.delivery_code ? "Verify & Mark Delivered" : "Mark as Delivered"}
-                  </Button>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3 p-3 rounded-xl bg-orange-50 border border-orange-200">
+                      <Truck className="h-5 w-5 text-orange-600 shrink-0" />
+                      <div>
+                        <p className="text-sm font-black text-orange-800">Order Dispatched</p>
+                        <p className="text-xs text-orange-600">
+                          {selectedOrder.logistics_partner_id
+                            ? `Assigned to: ${logisticsPartners.find(lp => lp.partner_id === selectedOrder.logistics_partner_id)?.name || selectedOrder.logistics_partner_id}`
+                            : "Self-dispatch (no partner assigned)"}
+                        </p>
+                      </div>
+                    </div>
+                    <Button className="w-full bg-emerald-600 hover:bg-emerald-700 font-bold" onClick={() => handleMarkDelivered(selectedOrder.id)} disabled={updateMutation.isPending}>
+                      <Package className="h-4 w-4 mr-2" /> Mark as Delivered
+                    </Button>
+                  </div>
+                )}
+
+                {/* Step 5: Completed */}
+                {selectedOrder.status === "completed" && (
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+                    <CheckCircle className="h-5 w-5 text-emerald-600 shrink-0" />
+                    <p className="text-sm font-black text-emerald-800">✅ Order Delivered Successfully</p>
+                  </div>
                 )}
               </div>
             </div>
