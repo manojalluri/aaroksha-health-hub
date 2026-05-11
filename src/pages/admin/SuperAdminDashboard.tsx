@@ -3038,6 +3038,7 @@ const SuperAdminDashboard = () => {
             </div>
           )}
 
+        </main>
       </div>
 
       {/* ── ADD / EDIT PARTNER MODAL ────────────────────────────────────── */}
