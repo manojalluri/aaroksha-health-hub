@@ -253,6 +253,24 @@ const BookAppointmentPage = () => {
   const accentColor = "#2563eb";
   const initial = doctor?.name?.replace("Dr. ", "").charAt(0) || "D";
 
+  // Guard: if OPD is disabled by admin, show Coming Soon
+  if (settings && !settings.opdCheck) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mb-6">
+          <Calendar className="h-10 w-10 text-blue-600" />
+        </div>
+        <h1 className="text-2xl font-black text-slate-800 mb-2">Coming Soon!</h1>
+        <p className="text-sm text-slate-500 max-w-xs mb-8">
+          OPD Appointments are currently being upgraded. We will be back with this service shortly!
+        </p>
+        <button onClick={() => navigate("/")} className="px-6 py-3 bg-blue-600 text-white font-black rounded-xl text-sm shadow-lg shadow-blue-200">
+          Return to Home
+        </button>
+      </div>
+    );
+  }
+
   if (isDoctorLoading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -285,7 +303,7 @@ const BookAppointmentPage = () => {
           </button>
           <div className="flex-1 min-w-0">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              {step === "slots" ? "Choose Slot" : step === "details" ? "Patient Info" : step === "checkout" ? "Confirm & Pay" : "Confirmed!"}
+              {step === "slots" ? "Choose Slot" : step === "details" ? "Patient Info" : step === "checkout" ? "Confirm Order (Cash)" : "Confirmed!"}
             </p>
             <h1 className="text-base font-black text-slate-800 truncate">{doctor.name}</h1>
           </div>
