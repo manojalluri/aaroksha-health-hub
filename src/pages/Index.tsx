@@ -1,7 +1,9 @@
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import {
   FlaskConical, Calendar, Pill, Home, User, Clock,
-  ChevronRight, MapPin, Search, Bell, Star, ArrowRight, Building2, Phone, Mail, LifeBuoy
+  ChevronRight, MapPin, Search, Bell, Star, ArrowRight, Building2, Phone, Mail, LifeBuoy,
+  Shield, Zap, HeartPulse, Users, CheckCircle2, Stethoscope, Microscope, Truck, Activity,
+  Droplets, Apple, BedDouble, Dumbbell, Wind
 } from "lucide-react";
 
 import { useState, useEffect, useRef } from "react";
@@ -12,6 +14,191 @@ import { getLocalDoctors } from "@/lib/doctorsSync";
 import { getSettings, syncSettingsFromSupabase } from "@/lib/settingsSync";
 import SEO from "@/components/SEO";
 import { SEO_CONFIG } from "@/utils/seoConfig";
+
+// ─── How It Works — tabbed per service ────────────────────────────────────────
+const HOW_IT_WORKS = [
+  {
+    id: "doctors",
+    label: "Doctor Booking",
+    icon: Calendar,
+    accentColor: "#2563eb",
+    accentBg: "#dbeafe",
+    tabBg: "linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)",
+    steps: [
+      {
+        icon: Search,
+        title: "Find Your Doctor",
+        desc: "Browse specialist doctors by specialty — cardiologist, dermatologist, general physician & more. Read profiles and choose the right fit.",
+      },
+      {
+        icon: Calendar,
+        title: "Pick a Time Slot",
+        desc: "See real-time availability and select a date & time that suits you. Instant confirmation — no phone calls, no waiting.",
+      },
+      {
+        icon: CheckCircle2,
+        title: "Visit & Get Treated",
+        desc: "Arrive at your booked slot. Consult with confidence, skip the queue, and get your prescription or referral on the spot.",
+      },
+    ],
+    cta: "Book a Doctor",
+    to: "/doctors",
+  },
+  {
+    id: "labtests",
+    label: "Lab Tests",
+    icon: FlaskConical,
+    accentColor: "#7c3aed",
+    accentBg: "#ede9fe",
+    tabBg: "linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)",
+    steps: [
+      {
+        icon: Search,
+        title: "Search Your Test",
+        desc: "Find from 200+ tests — blood sugar, thyroid, CBC, lipid profile, vitamin panels & more. View price, report time, and fasting requirements.",
+      },
+      {
+        icon: Microscope,
+        title: "Book Home Collection",
+        desc: "Choose home sample collection or walk-in at the lab. Select a convenient time slot. A certified phlebotomist comes to your door.",
+      },
+      {
+        icon: Activity,
+        title: "Get Digital Reports",
+        desc: "Reports are processed in certified labs and delivered digitally. Track results online and share with your doctor instantly.",
+      },
+    ],
+    cta: "Book a Lab Test",
+    to: "/lab-tests",
+  },
+  {
+    id: "medicines",
+    label: "Medicines",
+    icon: Pill,
+    accentColor: "#059669",
+    accentBg: "#d1fae5",
+    tabBg: "linear-gradient(135deg, #f0fdf4 0%, #d1fae5 100%)",
+    steps: [
+      {
+        icon: Pill,
+        title: "Upload Prescription",
+        desc: "Upload your doctor's prescription directly from your phone. Our pharmacists verify it for accuracy and safety before dispensing.",
+      },
+      {
+        icon: CheckCircle2,
+        title: "Order Confirmed",
+        desc: "We source 100% genuine medicines from certified distributors. You get a detailed bill with exact quantities and expiry info.",
+      },
+      {
+        icon: Truck,
+        title: "Delivered in 2 Hours",
+        desc: "Our delivery partner brings medicines to your doorstep within 2 hours. Cold-chain maintained for temperature-sensitive drugs.",
+      },
+    ],
+    cta: "Order Medicines",
+    to: "/prescription",
+  },
+];
+
+function HowItWorksSection() {
+  const [activeTab, setActiveTab] = useState(0);
+  const service = HOW_IT_WORKS[activeTab];
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="mb-3 md:mb-5">
+        <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-0.5">Simple Steps</p>
+        <h2 className="text-base md:text-lg font-black text-slate-800">How It Works</h2>
+      </div>
+
+      {/* Tab Switcher */}
+      <div className="flex gap-2 mb-4 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+        {HOW_IT_WORKS.map((s, i) => {
+          const Icon = s.icon;
+          const isActive = i === activeTab;
+          return (
+            <button
+              key={s.id}
+              onClick={() => setActiveTab(i)}
+              className="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl font-black text-xs transition-all duration-200"
+              style={{
+                background: isActive ? s.accentColor : "#f1f5f9",
+                color: isActive ? "#fff" : "#64748b",
+                boxShadow: isActive ? `0 4px 14px ${s.accentColor}40` : "none",
+                transform: isActive ? "scale(1.03)" : "scale(1)",
+              }}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {s.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Steps Grid */}
+      <div
+        key={service.id}
+        className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4"
+        style={{ animation: "fadeInUp 0.3s ease forwards" }}
+      >
+        <style>{`
+          @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to   { opacity: 1; transform: translateY(0); }
+          }
+        `}</style>
+
+        {service.steps.map(({ icon: Icon, title, desc }, idx) => (
+          <div
+            key={title}
+            className="relative rounded-2xl md:rounded-3xl p-5 md:p-6 border border-slate-100 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 overflow-hidden"
+            style={{ background: service.tabBg }}
+          >
+            {/* Step watermark */}
+            <span
+              className="absolute top-3 right-4 font-black text-5xl select-none"
+              style={{ color: service.accentColor, opacity: 0.07 }}
+            >
+              {String(idx + 1).padStart(2, "0")}
+            </span>
+
+            {/* Step badge */}
+            <span
+              className="absolute top-3 left-4 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full text-white"
+              style={{ background: service.accentColor }}
+            >
+              Step {idx + 1}
+            </span>
+
+            {/* Icon */}
+            <div
+              className="h-10 w-10 rounded-xl flex items-center justify-center mt-5 mb-3 bg-white shadow-sm"
+            >
+              <Icon className="h-5 w-5" style={{ color: service.accentColor }} />
+            </div>
+
+            <p className="text-sm md:text-base font-black text-slate-800 mb-1.5">{title}</p>
+            <p className="text-[11px] md:text-xs text-slate-500 font-medium leading-relaxed">{desc}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* CTA */}
+      <div className="mt-4 flex justify-end">
+        <Link
+          to={service.to}
+          className="inline-flex items-center gap-1.5 text-xs font-black px-4 py-2 rounded-xl text-white transition-all hover:opacity-90 active:scale-95"
+          style={{ background: service.accentColor, boxShadow: `0 4px 14px ${service.accentColor}40` }}
+        >
+          {service.cta}
+          <ChevronRight className="h-3.5 w-3.5" />
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 
 const Index = () => {
   const navigate = useNavigate();
@@ -473,6 +660,97 @@ const Index = () => {
                     <p className="text-[9px] md:text-[11px] text-slate-400 font-medium mt-0.5 leading-tight">Coming Soon</p>
                   </div>
                 )
+              ))}
+            </div>
+          </div>
+
+          {/* ── WHY CHOOSE US ── */}
+          <div>
+            <div className="flex items-center justify-between mb-3 md:mb-5">
+              <div>
+                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-0.5">Why Aaroksha</p>
+                <h2 className="text-base md:text-lg font-black text-slate-800">Bhimavaram Trusts Us</h2>
+              </div>
+            </div>
+
+            {/* Stat Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-4">
+              {[
+                { icon: Users, value: "500+", label: "Happy Patients", color: "#2563eb", bg: "#dbeafe" },
+                { icon: Stethoscope, value: "50+", label: "Specialist Doctors", color: "#7c3aed", bg: "#ede9fe" },
+                { icon: Microscope, value: "100+", label: "Lab Tests", color: "#059669", bg: "#d1fae5" },
+                { icon: Truck, value: "30 Min", label: "Medicine Delivery", color: "#d97706", bg: "#fef3c7" },
+              ].map(({ icon: Icon, value, label, color, bg }) => (
+                <div
+                  key={label}
+                  className="bg-white border border-slate-100 rounded-2xl md:rounded-3xl p-4 md:p-5 flex flex-col items-center text-center hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200"
+                >
+                  <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl md:rounded-2xl flex items-center justify-center mb-2 md:mb-3" style={{ backgroundColor: bg }}>
+                    <Icon className="h-5 w-5 md:h-6 md:w-6" style={{ color }} />
+                  </div>
+                  <p className="text-lg md:text-2xl font-black text-slate-800 leading-none mb-1" style={{ color }}>{value}</p>
+                  <p className="text-[9px] md:text-[11px] text-slate-500 font-bold uppercase tracking-wider leading-tight">{label}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Trust Badges */}
+            <div className="grid grid-cols-3 gap-2.5 md:gap-4">
+              {[
+                { icon: Shield, text: "100% Genuine Medicines", color: "#2563eb", bg: "#eff6ff" },
+                { icon: Zap, text: "Fast Delivery & Booking", color: "#d97706", bg: "#fffbeb" },
+                { icon: HeartPulse, text: "Trusted by Families", color: "#dc2626", bg: "#fff1f2" },
+              ].map(({ icon: Icon, text, color, bg }) => (
+                <div
+                  key={text}
+                  className="rounded-2xl p-3 md:p-4 flex flex-col items-center text-center border border-slate-100 hover:shadow-md transition-all"
+                  style={{ background: bg }}
+                >
+                  <Icon className="h-5 w-5 md:h-6 md:w-6 mb-2" style={{ color }} />
+                  <p className="text-[9px] md:text-[11px] font-black text-slate-700 leading-tight">{text}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ── HOW IT WORKS ── */}
+          <HowItWorksSection />
+
+          {/* ── HEALTH TIPS HORIZONTAL SCROLL ── */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-0.5">Stay Healthy</p>
+                <h2 className="text-base md:text-lg font-black text-slate-800">Daily Health Tips</h2>
+              </div>
+              <span className="text-[10px] text-slate-400 font-bold hidden md:block">Scroll →</span>
+            </div>
+            <div
+              className="flex gap-3 overflow-x-auto pb-2"
+              style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+            >
+              {[
+                { icon: Droplets, tip: "Drink 8 glasses of water daily", detail: "Hydration boosts energy & skin health", color: "#0ea5e9", bg: "linear-gradient(135deg, #f0f9ff, #e0f2fe)" },
+                { icon: Apple, tip: "Eat more fruits & vegetables", detail: "5 servings a day keeps illness away", color: "#16a34a", bg: "linear-gradient(135deg, #f0fdf4, #dcfce7)" },
+                { icon: Dumbbell, tip: "Exercise 30 min every day", detail: "Walk, yoga, or any activity you enjoy", color: "#7c3aed", bg: "linear-gradient(135deg, #f5f3ff, #ede9fe)" },
+                { icon: BedDouble, tip: "Sleep 7–8 hours nightly", detail: "Good sleep heals and restores the body", color: "#2563eb", bg: "linear-gradient(135deg, #eff6ff, #dbeafe)" },
+                { icon: Wind, tip: "Breathe deep, stress less", detail: "5-min breathing reduces anxiety fast", color: "#0891b2", bg: "linear-gradient(135deg, #ecfeff, #cffafe)" },
+                { icon: Activity, tip: "Get regular health check-ups", detail: "Early detection saves lives", color: "#dc2626", bg: "linear-gradient(135deg, #fff1f2, #ffe4e6)" },
+              ].map(({ icon: Icon, tip, detail, color, bg }) => (
+                <div
+                  key={tip}
+                  className="flex-shrink-0 w-44 md:w-52 rounded-2xl p-4 border border-slate-100 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+                  style={{ background: bg }}
+                >
+                  <div
+                    className="h-9 w-9 rounded-xl flex items-center justify-center mb-3"
+                    style={{ background: "rgba(255,255,255,0.8)" }}
+                  >
+                    <Icon className="h-4.5 w-4.5 h-5 w-5" style={{ color }} />
+                  </div>
+                  <p className="text-[11px] md:text-xs font-black text-slate-800 leading-snug mb-1">{tip}</p>
+                  <p className="text-[9px] md:text-[10px] text-slate-500 font-medium leading-snug">{detail}</p>
+                </div>
               ))}
             </div>
           </div>
