@@ -58,8 +58,7 @@ export function PWAInstallPrompt() {
     // Already running as installed PWA — hide
     if (isInStandaloneMode()) return;
 
-    // User already dismissed — don't show again
-    if (localStorage.getItem(DISMISSED_KEY) === "true") return;
+    // (Removed logic that hides prompt if dismissed previously)
 
     // ─── iOS: show immediately on mount ───────────────────────────
     if (isIOS()) {
@@ -96,7 +95,7 @@ export function PWAInstallPrompt() {
   const handleDismiss = useCallback(() => {
     setShowBanner(false);
     setShowIOSGuide(false);
-    localStorage.setItem(DISMISSED_KEY, "true");
+    // Removed localStorage persistence so it shows up again on next load
   }, []);
 
   if (installed) return null;
