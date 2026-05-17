@@ -136,7 +136,7 @@ const Index = () => {
     { icon: Calendar, title: "OP Booking", subtitle: "Book appointments", to: "/doctors", color: "#2563eb", bg: "#dbeafe", visible: settings.opdCheck },
     { icon: FlaskConical, title: "Lab Tests", subtitle: "At your door", to: "/lab-tests", color: "#7c3aed", bg: "#ede9fe", visible: settings.labCheck },
     { icon: Pill, title: "Medicines", subtitle: "Delivered fast", to: "/prescription", color: "#059669", bg: "#d1fae5", visible: settings.pharmCheck },
-  ].filter(s => s.visible !== false);
+  ];
 
   const desktopNav = [
     { label: "Home", to: "/" },
@@ -440,25 +440,45 @@ const Index = () => {
             <h2 className="text-base md:text-lg font-black text-slate-800 mb-3 md:mb-4">Our Services</h2>
             <div className="grid grid-cols-3 gap-2.5 md:gap-4">
               {services.map((s) => (
-                <Link
-                  key={s.to}
-                  to={s.to}
-                  className="bg-white rounded-2xl md:rounded-3xl p-3.5 md:p-5 flex flex-col items-center text-center border border-slate-100 hover:shadow-lg active:scale-95 transition-all duration-150 group"
-                >
-                  <div
-                    className="h-12 w-12 md:h-16 md:w-16 rounded-xl md:rounded-2xl flex items-center justify-center mb-2 md:mb-3 group-hover:scale-110 transition-transform"
-                    style={{ backgroundColor: s.bg }}
+                s.visible !== false ? (
+                  <Link
+                    key={s.to}
+                    to={s.to}
+                    className="bg-white rounded-2xl md:rounded-3xl p-3.5 md:p-5 flex flex-col items-center text-center border border-slate-100 hover:shadow-lg active:scale-95 transition-all duration-150 group"
                   >
-                    <s.icon className="h-6 w-6 md:h-8 md:w-8" style={{ color: s.color }} />
+                    <div
+                      className="h-12 w-12 md:h-16 md:w-16 rounded-xl md:rounded-2xl flex items-center justify-center mb-2 md:mb-3 group-hover:scale-110 transition-transform"
+                      style={{ backgroundColor: s.bg }}
+                    >
+                      <s.icon className="h-6 w-6 md:h-8 md:w-8" style={{ color: s.color }} />
+                    </div>
+                    <p className="text-[11px] md:text-sm font-black text-slate-700 leading-tight">{s.title}</p>
+                    <p className="text-[9px] md:text-[11px] text-slate-400 font-medium mt-0.5 leading-tight">{s.subtitle}</p>
+                  </Link>
+                ) : (
+                  <div
+                    key={s.to}
+                    className="bg-slate-50 opacity-70 rounded-2xl md:rounded-3xl p-3.5 md:p-5 flex flex-col items-center text-center border border-slate-100 relative overflow-hidden"
+                  >
+                    <div className="absolute top-2 right-[-20px] bg-red-500 text-white text-[8px] font-black uppercase tracking-widest px-6 py-0.5 rotate-45 shadow-sm">
+                      Soon
+                    </div>
+                    <div
+                      className="h-12 w-12 md:h-16 md:w-16 rounded-xl md:rounded-2xl flex items-center justify-center mb-2 md:mb-3 grayscale"
+                      style={{ backgroundColor: s.bg }}
+                    >
+                      <s.icon className="h-6 w-6 md:h-8 md:w-8" style={{ color: s.color }} />
+                    </div>
+                    <p className="text-[11px] md:text-sm font-black text-slate-400 leading-tight">{s.title}</p>
+                    <p className="text-[9px] md:text-[11px] text-slate-400 font-medium mt-0.5 leading-tight">Coming Soon</p>
                   </div>
-                  <p className="text-[11px] md:text-sm font-black text-slate-700 leading-tight">{s.title}</p>
-                  <p className="text-[9px] md:text-[11px] text-slate-400 font-medium mt-0.5 leading-tight">{s.subtitle}</p>
-                </Link>
+                )
               ))}
             </div>
           </div>
 
           {/* ── PARTNER HOSPITALS / DOCTORS ── */}
+          {settings.opdCheck !== false && (
           <div>
             <div className="flex items-center justify-between mb-3 md:mb-4">
               <h2 className="text-base md:text-lg font-black text-slate-800 tracking-tight">
@@ -528,6 +548,7 @@ const Index = () => {
               </div>
             )}
           </div>
+          )}
 
           {/* ── CTA BANNER ── */}
           <div
