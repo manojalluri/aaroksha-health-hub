@@ -28,6 +28,8 @@ import LogisticsLogin from "./pages/admin/LogisticsLogin";
 import SuperAdminLogin from "./pages/admin/SuperAdminLogin";
 import SuperAdminResetPassword from "./pages/admin/SuperAdminResetPassword";
 import ProtectedAdminRoute from "./components/ProtectedAdminRoute";
+import { PWAInstallPrompt } from "./components/PWAInstallPrompt";
+import { PWAUpdateToast } from "./components/PWAUpdateToast";
 
 
 
@@ -154,6 +156,8 @@ const App = () => {
         <QueryClientProvider client={queryClient}>
           <TooltipProvider>
             <Sonner />
+            <PWAUpdateToast />
+            <PWAInstallPrompt />
             <BrowserRouter>
               <AppRoutes />
             </BrowserRouter>
