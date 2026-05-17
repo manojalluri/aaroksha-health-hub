@@ -19,6 +19,7 @@ import { supabase } from "@/lib/supabase";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "@/lib/settingsSync";
 import { verifyPartnerSession, clearAdminSession, revokePartnerSession, getPartnerIdFromSession } from "@/lib/adminAuth";
+import { SettlementManager } from "@/components/SettlementManager";
 
 // --- Types --------------------------------------------------------------
 interface MedicineItem {
@@ -372,7 +373,7 @@ const PharmacyDashboard = () => {
           <Tabs defaultValue="prescriptions">
             <div className="border-b border-slate-100 px-2 pt-2">
               <TabsList className="bg-transparent gap-1 h-auto p-0">
-                {["prescriptions", "revenue", "payouts"].map(tab => (
+                {["prescriptions", "revenue", "settlements"].map(tab => (
                   <TabsTrigger key={tab} value={tab} className="px-5 py-2.5 text-sm font-semibold capitalize rounded-t-xl data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:border data-[state=active]:border-b-white data-[state=active]:border-slate-200 text-slate-400">
                     {tab === "prescriptions" ? "Prescription Orders" : tab === "revenue" ? "Revenue" : "Settlements & Payouts"}
                   </TabsTrigger>
@@ -545,140 +546,9 @@ const PharmacyDashboard = () => {
               </div>
             </TabsContent>
 
-            {/* ════ PAYOUTS TAB ════ */}
-            <TabsContent value="payouts" className="p-6 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Statement Summary */}
-                <div className="bg-slate-900 rounded-3xl p-8 text-white shadow-2xl relative overflow-hidden flex flex-col justify-between">
-                  <div className="absolute top-0 right-0 p-8 opacity-10">
-                    <IndianRupee className="h-32 w-32 font-black" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400 mb-2">Pharmacy Net Settlement</p>
-                    <h2 className="text-5xl font-black mb-6">₹{(() => {
-                      const billable = orders.filter(o => {
-                        if (o.partner_id !== partner?.partner_id && (o.partner_id || o.status !== 'completed')) return false;
-                        // Count from paid onwards (not just completed)
-                        const isPaid = o.payment_status === "paid" || o.status === "paid";
-                        const isActive = ["paid","dispatched","collected","completed"].includes(o.status) || isPaid;
-                        if (!isActive) return false;
-                        if (settlementFilter === "today") return new Date(o.created_at).toDateString() === new Date().toDateString();
-                        if (settlementFilter === "yesterday") {
-                          const y = new Date(); y.setDate(y.getDate() - 1);
-                          return new Date(o.created_at).toDateString() === y.toDateString();
-                        }
-                        return true;
-                      });
-                      const total = billable.reduce((s, o) => s + (o.sub_total || 0), 0);
-                      const rate = partner?.commission_rate || 15;
-                      const comm = partner?.commission_type === "fixed" ? billable.length * rate : (total * rate) / 100;
-                      return (total - comm).toLocaleString("en-IN");
-                    })()}</h2>
-                  </div>
-                  <div className="space-y-4 pt-6 border-t border-white/10">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-400">Commission Rate</span>
-                      <span className="font-bold">{partner?.commission_rate || 15}% platform fee</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Info Card */}
-                <div className="space-y-4">
-                  <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
-                    <h3 className="font-black text-slate-900 flex items-center gap-2 mb-4">
-                      <TrendingUp className="h-5 w-5 text-emerald-500" /> Settlement Policy
-                    </h3>
-                    <ul className="space-y-3">
-                      {[
-                        { l: "Payout Cycle", v: partner?.settlement_cycle ? partner.settlement_cycle.charAt(0).toUpperCase() + partner.settlement_cycle.slice(1) : "Monthly" },
-                        { l: "Platform Rate", v: `${partner?.commission_rate || 15}% on Order Value` },
-                        { l: "Payment Mode", v: "Direct Bank Transfer" },
-                        { l: "Next Settlement", v: (() => {
-                          const cycle = partner?.settlement_cycle || 'monthly';
-                          const d = new Date();
-                          if (cycle === 'today') return "By EOD Today";
-                          if (cycle === 'daily') return "Tomorrow Morning";
-                          if (cycle === 'weekly') {
-                            d.setDate(d.getDate() + (7 - d.getDay()) % 7 || 7);
-                            return d.toLocaleDateString();
-                          }
-                          return "1st of " + new Date(d.getFullYear(), d.getMonth() + 1, 1).toLocaleString('en-IN', { month: 'short' });
-                        })() }
-                      ].map(item => (
-                        <li key={item.l} className="flex justify-between items-center text-xs">
-                          <span className="text-slate-400 font-bold uppercase tracking-wider">{item.l}</span>
-                          <span className="font-black text-slate-700">{item.v}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              </div>
-
-              {/* Commission Table */}
-              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-50 flex items-center justify-between flex-wrap gap-4">
-                  <div className="flex items-center gap-4">
-                    <h3 className="font-black text-slate-900 text-sm italic underline decoration-emerald-500 underline-offset-4">Settlement Breakdown</h3>
-                    <div className="flex bg-slate-100 p-1 rounded-xl">
-                      {(["all", "today", "yesterday"] as const).map(f => (
-                        <button key={f} onClick={() => setSettlementFilter(f)}
-                          className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${settlementFilter === f ? "bg-white text-emerald-600 shadow-sm" : "text-slate-400 hover:text-slate-600"}`}>
-                          {f}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader className="bg-slate-50">
-                        <TableRow>
-                          <TableHead className="text-[10px] font-black uppercase">Order ID</TableHead>
-                          <TableHead className="text-[10px] font-black uppercase text-center">Meds Total</TableHead>
-                          <TableHead className="text-[10px] font-black uppercase text-center text-red-500">Commission</TableHead>
-                          <TableHead className="text-[10px] font-black uppercase text-right text-emerald-600">Your Net</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {(() => {
-                          const filtered = orders.filter(o => {
-                            if (o.partner_id !== partner?.partner_id && (o.partner_id || o.status !== 'completed')) return false;
-                            if (o.status !== "completed") return false;
-                            if (settlementFilter === "today") return new Date(o.created_at).toDateString() === new Date().toDateString();
-                            if (settlementFilter === "yesterday") {
-                              const y = new Date(); y.setDate(y.getDate() - 1);
-                              return new Date(o.created_at).toDateString() === y.toDateString();
-                            }
-                            return true;
-                          });
-                          if (filtered.length === 0) return (
-                            <TableRow><TableCell colSpan={4} className="text-center py-8 text-slate-400 text-xs font-bold">
-                              No completed orders for {settlementFilter === "all" ? "any period" : `"${settlementFilter}"`}
-                            </TableCell></TableRow>
-                          );
-                          return filtered.slice(0, 15).map(o => {
-                            // Show only medicines sub_total to partner
-                            const gt = o.sub_total || 0;
-                            const rate = partner?.commission_rate || 15;
-                            const comm = partner?.commission_type === "fixed"
-                              ? rate
-                              : (gt * rate) / 100;
-                            return (
-                              <TableRow key={o.id}>
-                                <TableCell className="font-mono text-[10px] font-bold text-slate-400">{o.order_id || o.id.slice(0,8).toUpperCase()}</TableCell>
-                                <TableCell className="text-center font-bold text-slate-700 text-xs">₹{gt}</TableCell>
-                                <TableCell className="text-center font-bold text-red-500 text-xs">₹{comm.toFixed(2)}</TableCell>
-                                <TableCell className="text-right font-black text-slate-800 text-xs">₹{(gt - comm).toFixed(2)}</TableCell>
-                              </TableRow>
-                            );
-                          });
-                        })()}
-                      </TableBody>
-                    </Table>
-                </div>
-              </div>
+            {/* ════ SETTLEMENTS TAB ════ */}
+            <TabsContent value="settlements" className="p-6 space-y-6">
+              <SettlementManager userType="partner" partnerId={partner?.partner_id || undefined} partnerType="pharmacy" />
             </TabsContent>
           </Tabs>
         </div>

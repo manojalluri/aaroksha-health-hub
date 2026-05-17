@@ -19,9 +19,10 @@ import { getSettings, saveSettingsLocally, saveSettingsToSupabase, syncSettingsF
 import { logActivity } from "@/lib/audit";
 import { useNavigate } from "react-router-dom";
 import { verifySuperAdminSession, clearAdminSession } from "@/lib/adminAuth";
+import { SettlementManager } from "@/components/SettlementManager";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Tab = "overview" | "live" | "users" | "partners" | "payouts" | "credentials" | "commissions" | "transactions" | "settings" | "lookup" | "banners" | "logistics_hub" | "incomplete_tasks" | "storage";
+type Tab = "overview" | "live" | "users" | "partners" | "settlements" | "credentials" | "commissions" | "transactions" | "settings" | "lookup" | "banners" | "logistics_hub" | "incomplete_tasks" | "storage";
 
 interface BookingItem {
   id: string;
@@ -901,7 +902,7 @@ const SuperAdminDashboard = () => {
     { id: "users" as Tab,         label: "Users",          icon: <Users className="h-4 w-4" /> },
     { id: "partners" as Tab,      label: "Partners",       icon: <Building2 className="h-4 w-4" /> },
     { id: "logistics_hub" as Tab, label: "Logistics Hub",  icon: <Truck className="h-4 w-4" /> },
-    { id: "payouts" as Tab,       label: "Payouts",        icon: <IndianRupee className="h-4 w-4" /> },
+    { id: "settlements" as Tab,       label: "Settlements",        icon: <IndianRupee className="h-4 w-4" /> },
     { id: "credentials" as Tab,   label: "Credentials",    icon: <KeyRound className="h-4 w-4" /> },
     { id: "commissions" as Tab,   label: "Commissions",    icon: <Percent className="h-4 w-4" /> },
     { id: "transactions" as Tab,  label: "Transactions",   icon: <CreditCard className="h-4 w-4" /> },
@@ -1836,125 +1837,10 @@ const SuperAdminDashboard = () => {
           )}
 
           {/* ── PAYOUTS ───────────────────────────────────────────────── */}
-          {activeTab === "payouts" && (() => {
-            const payoutRows = partners.map(p => {
-              const earned = getPartnerEarned(p);
-              const txnCount = getPartnerTxnCount(p);
-              const commission = getPartnerCommission(p);
-              const platFees = getPartnerPlatformFees(p, txnCount);
-              return {
-                id: p.id, name: p.name, type: p.type,
-                earned, txnCount, commission, platFees, netPayable: Math.max(0, earned - commission - platFees)
-              };
-            });
-            const totalPayable = payoutRows.reduce((s, r) => s + r.netPayable, 0);
-
-            const exportToCSV = () => {
-              const columns = [
-                { header: "Partner Name", key: "name" },
-                { header: "Service Type", key: "type" },
-                { header: "Transaction Count", key: "txnCount" },
-                { header: "Gross Earned (INR)", key: "earned" },
-                { header: "Net Payable (INR)", key: "netPayable" },
-                { header: "Platform Commission", key: "commission" },
-                { header: "Platform Fees", key: "platFees" }
-              ];
-              downloadCSV(payoutRows, "Aaroksha_Payouts", columns);
-            };
-
-            return (
-              <div className="space-y-5">
-                <div className="flex items-center gap-3 bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
-                  <div className="flex-1 bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 flex items-center gap-3">
-                    <Calendar className="h-4 w-4 text-slate-400" />
-                    <select value={dateFilter} onChange={e => setDateFilter(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 outline-none w-full">
-                      <option value="all">All Time</option>
-                      <option value="today">Today</option>
-                      <option value="yesterday">Yesterday</option>
-                      <option value="week">Past 7 Days</option>
-                      <option value="month">Past 30 Days</option>
-                      <option value="custom">Custom Range</option>
-                    </select>
-                  </div>
-                  {dateFilter === "custom" && (
-                    <div className="flex gap-2">
-                      <input type="date" value={customDate.start} onChange={e => setCustomDate({...customDate, start: e.target.value})} className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 outline-none" />
-                      <input type="date" value={customDate.end} onChange={e => setCustomDate({...customDate, end: e.target.value})} className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 outline-none" />
-                    </div>
-                  )}
-                </div>
-
-                <div className="bg-[#0F172A] rounded-2xl p-6 flex items-center justify-between shadow-xl">
-                  <div>
-                    <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">Total Pending Payouts</p>
-                    <p className="text-4xl font-black text-white">₹{totalPayable.toLocaleString("en-IN")}</p>
-                    <p className="text-slate-500 text-sm mt-1">Net of commission & platform fees · {payoutRows.length} partners</p>
-                  </div>
-                  <button onClick={exportToCSV} className="flex items-center gap-2 bg-white text-slate-900 px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-slate-100 transition-all">
-                    <Download className="h-4 w-4" /> Export CSV
-                  </button>
-                </div>
-
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-slate-50">
-                        <th className="px-6 py-3.5 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Partner</th>
-                        <th className="px-4 py-3.5 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">Gross</th>
-                        <th className="px-4 py-3.5 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">Commission</th>
-                        <th className="px-4 py-3.5 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">Platform Fees</th>
-                        <th className="px-4 py-3.5 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">Net Payable</th>
-                        <th className="px-6 py-3.5 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50">
-                      {payoutRows.map(row => {
-                        const meta = TYPE_META[row.type];
-                        return (
-                          <tr key={row.id} className="hover:bg-slate-50/50 transition-colors">
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-3">
-                                <div className={`h-9 w-9 ${meta.bg} rounded-xl flex items-center justify-center ${meta.color}`}>{meta.icon}</div>
-                                <div>
-                                  <p className="font-bold text-slate-900 text-sm">{row.name}</p>
-                                  <p className="text-[10px] text-slate-400">{row.txnCount} transactions</p>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-4 py-4 text-right font-bold text-slate-700">₹{row.earned.toLocaleString("en-IN")}</td>
-                            <td className="px-4 py-4 text-right"><span className="text-red-600 font-bold">−₹{row.commission.toLocaleString("en-IN")}</span></td>
-                            <td className="px-4 py-4 text-right"><span className="text-amber-600 font-bold">−₹{row.platFees.toLocaleString("en-IN")}</span></td>
-                            <td className="px-4 py-4 text-right">
-                              <span className={`font-black text-lg ${paidPartners[row.id] ? "text-slate-400 line-through" : "text-emerald-600"}`}>
-                                ₹{row.netPayable.toLocaleString("en-IN")}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-right">
-                              {paidPartners[row.id] ? (
-                                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-xl">
-                                  <CheckCircle2 className="h-3.5 w-3.5" /> Paid
-                                </span>
-                              ) : (
-                                <button onClick={() => { setPaidPartners(p => ({ ...p, [row.id]: true })); toast.success(`Marked ₹${row.netPayable.toLocaleString("en-IN")} as paid to ${row.name}`); }}
-                                  className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 px-4 py-1.5 rounded-xl transition-all">
-                                  <IndianRupee className="h-3.5 w-3.5" /> Mark Paid
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 flex gap-2.5">
-                  <Clock className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-800">Payouts are calculated monthly. Commission is auto-deducted. All transactions are logged for audit.</p>
-                </div>
-              </div>
-            );
-          })()}
+          {/* ── SETTLEMENTS ────────────────────────────────────────────── */}
+          {activeTab === "settlements" && (
+            <SettlementManager userType="super_admin" />
+          )}
 
           {/* ── CREDENTIALS ───────────────────────────────────────────── */}
           {activeTab === "credentials" && (

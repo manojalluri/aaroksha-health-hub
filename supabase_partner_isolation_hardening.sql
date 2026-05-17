@@ -25,7 +25,7 @@ BEGIN
     DELETE FROM admin_sessions WHERE partner_id = NEW.partner_id;
     
     -- Also mark their operational listings as inactive/deleted
-    UPDATE doctors SET status = 'inactive' WHERE partner_id = NEW.partner_id;
+    UPDATE doctors SET available = false WHERE partner_id = NEW.partner_id;
     -- Note: lab_tests don't have a status, they are filtered by partner status in queries
   END IF;
 

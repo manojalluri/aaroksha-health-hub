@@ -23,6 +23,7 @@ import {
   verifyPartnerSession, clearAdminSession, revokePartnerSession,
   getPartnerIdFromSession,
 } from "@/lib/adminAuth";
+import { SettlementManager } from "@/components/SettlementManager";
 
 // --- Constants -----------------------------------------------------------
 const SPECIALTIES = [
@@ -495,7 +496,7 @@ const HospitalDashboard = () => {
           <Tabs defaultValue="doctors">
             <div className="border-b border-slate-100 px-2 pt-2">
               <TabsList className="bg-transparent gap-1 h-auto p-0">
-                {["doctors","appointments","revenue","payouts", "settings"].map(tab => (
+                {["doctors","appointments","revenue","settlements", "settings"].map(tab => (
                   <TabsTrigger key={tab} value={tab}
                     className="px-5 py-2.5 text-sm font-semibold capitalize rounded-t-xl data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:border data-[state=active]:border-b-white data-[state=active]:border-slate-200 text-slate-400">
                     {tab === "doctors" ? "Doctors" : tab === "appointments" ? "Appointments" : tab === "revenue" ? "Revenue" : tab === "settings" ? "Hospital Profile" : "Settlements & Payouts"}
@@ -748,140 +749,9 @@ const HospitalDashboard = () => {
                   </div>
             </TabsContent>
 
-            {/* PAYOUTS TAB */}
-            <TabsContent value="payouts" className="p-6 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Statement Summary */}
-                <div className="bg-slate-900 rounded-3xl p-8 text-white shadow-2xl relative overflow-hidden flex flex-col justify-between">
-                  <div className="absolute top-0 right-0 p-8 opacity-10">
-                    <IndianRupee className="h-32 w-32" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-400 mb-2">Hospital Net Settlement</p>
-                    <h2 className="text-5xl font-black mb-6">₹{(() => {
-                      const billable = appointments.filter(a => {
-                        if (a.status !== "completed") return false;
-                        if (settlementFilter === "today") return new Date(a.appointment_date).toDateString() === new Date().toDateString();
-                        if (settlementFilter === "yesterday") {
-                          const y = new Date(); y.setDate(y.getDate() - 1);
-                          return new Date(a.appointment_date).toDateString() === y.toDateString();
-                        }
-                        return true;
-                      });
-                      // Use consultation_fee only - excludes platform fee added by super admin
-                      const total = billable.reduce((s, a) => s + (a.consultation_fee || 0), 0);
-                      const comm = partner?.commission_type === "percentage" ? (total * (partner?.commission_rate || 10)) / 100 : (billable.length * (partner?.commission_rate || 0));
-                      return (total - comm).toLocaleString("en-IN");
-                    })()}</h2>
-                  </div>
-                  <div className="space-y-4 pt-6 border-t border-white/10">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-400">Commission Model</span>
-                      <span className="font-bold">{partner?.commission_type === "fixed" ? `Fixed ₹${partner?.commission_rate}` : `${partner?.commission_rate}% Percentage`}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Info Card */}
-                <div className="space-y-4">
-                  <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
-                    <h3 className="font-black text-slate-900 flex items-center gap-2 mb-4">
-                      <TrendingUp className="h-5 w-5 text-emerald-500" /> Settlement Policy
-                    </h3>
-                    <ul className="space-y-3">
-                      {[
-                        { l: "Payout Cycle", v: partner?.settlement_cycle ? partner.settlement_cycle.charAt(0).toUpperCase() + partner.settlement_cycle.slice(1) : "Monthly" },
-                        { l: "Platform Rate", v: partner?.commission_type === "fixed" ? `₹${partner?.commission_rate} per appt` : `${partner?.commission_rate}% of billing` },
-                        { l: "Payment Mode", v: "Direct Bank Transfer" },
-                        { l: "Next Settlement", v: (() => {
-                          const cycle = partner?.settlement_cycle || 'monthly';
-                          const d = new Date();
-                          if (cycle === 'today') return "By EOD Today";
-                          if (cycle === 'daily') return "Tomorrow Morning";
-                          if (cycle === 'weekly') {
-                            d.setDate(d.getDate() + (7 - d.getDay()) % 7 || 7);
-                            return d.toLocaleDateString();
-                          }
-                          return "1st of " + new Date(d.getFullYear(), d.getMonth() + 1, 1).toLocaleString('en-IN', { month: 'short' });
-                        })() }
-                      ].map(item => (
-                        <li key={item.l} className="flex justify-between items-center text-xs">
-                          <span className="text-slate-400 font-bold uppercase tracking-wider">{item.l}</span>
-                          <span className="font-black text-slate-700">{item.v}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 flex gap-3">
-                    <Activity className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
-                    <p className="text-[11px] text-blue-700 leading-relaxed font-medium">
-                      Live data synchronized with Super Admin configuration. Settlements are based on <strong>completed</strong> appointments.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Commission Table */}
-              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-50 flex items-center justify-between flex-wrap gap-4">
-                  <div className="flex items-center gap-4">
-                    <h3 className="font-black text-slate-900 text-sm italic underline decoration-blue-500 underline-offset-4">Settlement Breakdown</h3>
-                    <div className="flex bg-slate-100 p-1 rounded-xl">
-                      {(["all", "today", "yesterday"] as const).map(f => (
-                        <button key={f} onClick={() => setSettlementFilter(f)}
-                          className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${settlementFilter === f ? "bg-white text-blue-600 shadow-sm" : "text-slate-400 hover:text-slate-600"}`}>
-                          {f}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader className="bg-slate-50">
-                      <TableRow>
-                        <TableHead className="text-[10px] font-black uppercase">Appt ID</TableHead>
-                        <TableHead className="text-[10px] font-black uppercase text-center">Consult. Fee</TableHead>
-                        <TableHead className="text-[10px] font-black uppercase text-center text-red-500">Commission</TableHead>
-                        <TableHead className="text-[10px] font-black uppercase text-right text-emerald-600">Your Net</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {(() => {
-                        const filtered = appointments.filter(a => {
-                          if (a.status !== "completed") return false;
-                          if (settlementFilter === "today") return new Date(a.appointment_date).toDateString() === new Date().toDateString();
-                          if (settlementFilter === "yesterday") {
-                            const y = new Date(); y.setDate(y.getDate() - 1);
-                            return new Date(a.appointment_date).toDateString() === y.toDateString();
-                          }
-                          return true;
-                        });
-                        if (filtered.length === 0) return (
-                          <TableRow><TableCell colSpan={4} className="text-center py-8 text-slate-400 text-xs font-bold">
-                            No completed transactions for {settlementFilter === "all" ? "any period" : `"${settlementFilter}"`}
-                          </TableCell></TableRow>
-                        );
-                        return filtered.slice(0, 15).map(a => {
-                          // Show only consultation_fee to partner - platform_fee is Aaroksha's revenue
-                          const fee = a.consultation_fee || 0;
-                          const cAmt = partner?.commission_type === "percentage"
-                            ? (fee * (partner?.commission_rate || 10)) / 100
-                            : (partner?.commission_rate || 0);
-                          return (
-                            <TableRow key={a.id}>
-                              <TableCell className="font-mono text-[10px] font-bold text-slate-400">{a.order_id || a.id.slice(0,8).toUpperCase()}</TableCell>
-                              <TableCell className="text-center font-bold text-slate-700 text-xs">₹{fee}</TableCell>
-                              <TableCell className="text-center font-bold text-red-500 text-xs">₹{cAmt.toFixed(2)}</TableCell>
-                              <TableCell className="text-right font-black text-slate-800 text-xs">₹{(fee - cAmt).toFixed(2)}</TableCell>
-                            </TableRow>
-                          );
-                        });
-                      })()}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
+            {/* SETTLEMENTS TAB */}
+            <TabsContent value="settlements" className="p-6 space-y-6">
+              <SettlementManager userType="partner" partnerId={partnerId || undefined} partnerType="hospital" />
             </TabsContent>
 
             {/* SETTINGS TAB */}
