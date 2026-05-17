@@ -1,27 +1,34 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <!-- Homepage -->
   <url>
     <loc>https://www.aaroksha.in/</loc>
-    <lastmod>2024-05-09</lastmod>
-    <changefreq>weekly</changefreq>
+    <lastmod>2026-05-17</lastmod>
+    <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
+  
+  <!-- Pharmacy / Medicines -->
   <url>
-    <loc>https://www.aaroksha.in/doctors</loc>
-    <lastmod>2024-05-09</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <loc>https://www.aaroksha.in/pharmacy</loc>
+    <lastmod>2026-05-17</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
   </url>
+  
+  <!-- Diagnostic Lab Tests -->
   <url>
-    <loc>https://www.aaroksha.in/lab-tests</loc>
-    <lastmod>2024-05-09</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <loc>https://www.aaroksha.in/lab</loc>
+    <lastmod>2026-05-17</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
   </url>
+  
+  <!-- Hospital Appointments -->
   <url>
-    <loc>https://www.aaroksha.in/prescription</loc>
-    <lastmod>2024-05-09</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
+    <loc>https://www.aaroksha.in/hospital</loc>
+    <lastmod>2026-05-17</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
   </url>
 </urlset>
