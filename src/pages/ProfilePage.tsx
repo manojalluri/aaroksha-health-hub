@@ -5,7 +5,7 @@ import {
   FlaskConical, Pill, Clock, CheckCircle, AlertCircle,
   ChevronRight, Package, Stethoscope, TestTube,
   RotateCcw, LogOut, CreditCard, ShieldCheck, Truck,
-  IndianRupee, KeyRound, Copy, Check,
+  IndianRupee, KeyRound, Copy, Check, Mail, LifeBuoy
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
@@ -717,6 +717,39 @@ const ProfilePage = () => {
         )}
 
 
+
+            {/* ── Help & Support ── */}
+            <div className="mt-8 bg-white border border-slate-100 rounded-3xl p-5 mb-8 shadow-sm relative overflow-hidden">
+              <div className="absolute -top-4 -right-4 p-4 opacity-[0.03]">
+                <LifeBuoy className="w-32 h-32 text-blue-600" />
+              </div>
+              <div className="relative z-10">
+                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">Need Help?</p>
+                <h3 className="text-base font-black text-slate-800 mb-4">Customer Support</h3>
+                
+                <div className="space-y-3">
+                  <a href="tel:+918886363636" className="flex items-center gap-3 bg-slate-50 border border-slate-100 p-3 rounded-2xl active:scale-95 transition-all">
+                    <div className="h-10 w-10 bg-blue-100 rounded-xl flex items-center justify-center shrink-0">
+                      <Phone className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Call Us</p>
+                      <p className="text-sm font-black text-slate-700">+91 8886363636</p>
+                    </div>
+                  </a>
+                  
+                  <a href="mailto:support@aaroksha.in" className="flex items-center gap-3 bg-slate-50 border border-slate-100 p-3 rounded-2xl active:scale-95 transition-all">
+                    <div className="h-10 w-10 bg-purple-100 rounded-xl flex items-center justify-center shrink-0">
+                      <Mail className="h-5 w-5 text-purple-600" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Email Us</p>
+                      <p className="text-sm font-black text-slate-700">support@aaroksha.in</p>
+                    </div>
+                  </a>
+                </div>
+              </div>
+            </div>
 
       </main>
 
