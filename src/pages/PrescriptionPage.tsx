@@ -254,6 +254,23 @@ const PrescriptionPage = () => {
     { icon: User, label: "Profile", to: "/profile" },
   ];
 
+  if (settings && !settings.pharmCheck) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mb-6">
+          <Pill className="h-10 w-10 text-blue-600" />
+        </div>
+        <h1 className="text-2xl font-black text-slate-800 mb-2">Coming Soon!</h1>
+        <p className="text-sm text-slate-500 max-w-xs mb-8">
+          Pharmacy Orders are currently being upgraded. We will be back with this service shortly!
+        </p>
+        <button onClick={() => navigate("/")} className="px-6 py-3 bg-blue-600 text-white font-black rounded-xl text-sm shadow-lg shadow-blue-200">
+          Return to Home
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
 

@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { getLocalDoctors } from "@/lib/doctorsSync";
+import { useSettings } from "@/lib/settingsSync";
 
 const avatarColors = ["#2563eb", "#7c3aed", "#059669", "#dc2626", "#d97706", "#0891b2"];
 
@@ -20,6 +21,7 @@ const DoctorsPage = () => {
   const { user } = useAuth();
 
   const queryClient = useQueryClient();
+  const { settings } = useSettings();
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -111,6 +113,24 @@ const DoctorsPage = () => {
     { icon: Pill, label: "Medicines", to: "/prescription" },
     { icon: User, label: "Profile", to: "/profile" },
   ];
+
+  if (settings && !settings.opdCheck) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
+        <SEO title="OP Booking - Coming Soon" description="OP Booking is coming soon to Aaroksha." />
+        <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mb-6">
+          <Calendar className="h-10 w-10 text-blue-600" />
+        </div>
+        <h1 className="text-2xl font-black text-slate-800 mb-2">Coming Soon!</h1>
+        <p className="text-sm text-slate-500 max-w-xs mb-8">
+          OPD Appointments are currently being upgraded. We will be back with this service shortly!
+        </p>
+        <button onClick={() => navigate("/")} className="px-6 py-3 bg-blue-600 text-white font-black rounded-xl text-sm shadow-lg shadow-blue-200">
+          Return to Home
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
