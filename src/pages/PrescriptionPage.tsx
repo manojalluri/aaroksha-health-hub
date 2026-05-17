@@ -492,7 +492,7 @@ const PrescriptionPage = () => {
                               }}
                               className="flex-1 py-4 rounded-xl bg-green-600 text-sm font-black text-white shadow-xl shadow-green-200 active:scale-95 transition-all"
                             >
-                              Pay ₹{order.grand_total}
+                              Confirm Order (Cash on Delivery)
                             </button>
                           )}
                           <button
@@ -892,7 +892,7 @@ const PrescriptionPage = () => {
               disabled={isUploading}
               className="w-full rounded-2xl bg-green-600 py-4 text-sm font-black text-white shadow-xl shadow-green-200 active:scale-[0.99] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {isUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <>Pay ₹{grandTotal} & Place Order →</>}
+              {isUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <>Confirm (Pay ₹{grandTotal} to Delivery Person) →</>}
             </button>
           )}
         </main>

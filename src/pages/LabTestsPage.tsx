@@ -352,7 +352,7 @@ const LabTestsPage = () => {
           )}
           <div className="flex-1">
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-              {step === "browse" ? "NABL Certified Labs" : step === "details" ? "Collection Details" : step === "checkout" ? "Confirm & Pay" : "Confirmed!"}
+              {step === "browse" ? "NABL Certified Labs" : step === "details" ? "Collection Details" : step === "checkout" ? "Confirm Order (Cash)" : "Confirmed!"}
             </p>
             <h1 className="text-lg font-black text-slate-800 leading-tight">
               {step === "browse" ? "Lab Tests" : step === "details" ? "Your Details" : step === "checkout" ? "Order Summary" : "Booking Placed"}
@@ -772,7 +772,7 @@ const LabTestsPage = () => {
             disabled={isSubmitting}
             className="w-full rounded-2xl bg-blue-600 py-4 text-sm font-black text-white shadow-xl shadow-blue-200 flex items-center justify-center gap-2 active:scale-[0.99] transition-all disabled:opacity-70"
           >
-            {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <>Confirm & Pay ₹{total} →</>}
+            {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <>Confirm (Pay ₹{total} to Collector) →</>}
           </button>
         </main>
       )}
