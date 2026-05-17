@@ -145,7 +145,7 @@ const LogisticsDashboard = () => {
         .from("prescriptions")
         .select("*")
         .eq("logistics_partner_id", partner.partner_id)
-        .in("status", ["reviewed", "dispatched", "collected", "completed"])
+        .in("status", ["confirmed", "reviewed", "dispatched", "collected", "completed"])
         .order("created_at", { ascending: false });
       if (error) throw error;
       return (data || []).map(d => ({ ...d, type: 'prescription' })) as DeliveryOrder[];
@@ -510,7 +510,6 @@ const LogisticsDashboard = () => {
                                   </button>
                                 )}
                                 
-                                {(order.status === 'collected' || (order.type === 'lab' && order.status === 'confirmed')) && (
                                   <button 
                                     onClick={() => {
                                       setVerifyingOrder(order);
@@ -520,7 +519,6 @@ const LogisticsDashboard = () => {
                                   >
                                     Verify & {order.type === 'lab' ? 'Collect' : 'Deliver'}
                                   </button>
-                                )}
                               </div>
                             )}
                             <a 
@@ -591,7 +589,6 @@ const LogisticsDashboard = () => {
                             </button>
                           )}
                           
-                          {(order.status === 'collected' || (order.type === 'lab' && order.status === 'confirmed')) && (
                             <button 
                               onClick={() => {
                                 setVerifyingOrder(order);
@@ -601,7 +598,6 @@ const LogisticsDashboard = () => {
                             >
                               Verify & {order.type === 'lab' ? 'Collect' : 'Deliver'}
                             </button>
-                          )}
                         </div>
                       )}
                     </div>

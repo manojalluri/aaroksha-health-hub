@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS public.settlements (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     order_id TEXT NOT NULL,
     transaction_id TEXT,
-    partner_id UUID REFERENCES public.partners(id),
+    partner_id UUID REFERENCES public.partners(id) ON DELETE CASCADE,
     partner_name TEXT,
     partner_type TEXT NOT NULL, -- 'hospital', 'lab', 'pharmacy', 'logistics'
     gross_amount NUMERIC NOT NULL DEFAULT 0,

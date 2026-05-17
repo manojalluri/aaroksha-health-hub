@@ -1603,7 +1603,7 @@ const LabDashboard = () => {
           {/* ── Settlements Tab ──────────────────────────────────────────────── */}
           {activeTab === "settlements" && (
             <div className="p-6">
-              <SettlementManager userType="partner" partnerId={partnerId || undefined} partnerType="lab" />
+              <SettlementManager userType="partner" partnerId={partner?.id || undefined} partnerType="lab" />
             </div>
           )}
 

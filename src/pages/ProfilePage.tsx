@@ -282,24 +282,24 @@ const ProfilePage = () => {
   }, []);
 
   // Handle Pay Now - generates delivery_code and marks payment_status = paid
-  const handlePayNow = async (rx: Prescription) => {
+  const handleConfirmCOD = async (rx: Prescription) => {
     setPayingId(rx.id);
     try {
       const code = generateDeliveryCode();
       const { error } = await supabase
         .from("prescriptions")
-        .update({ payment_status: "paid", delivery_code: code })
+        .update({ status: "confirmed", delivery_code: code })
         .eq("id", rx.id);
       if (error) throw error;
       // Update local state immediately
       setPrescriptions((prev) =>
         prev.map((p) =>
-          p.id === rx.id ? { ...p, payment_status: "paid", delivery_code: code } : p
+          p.id === rx.id ? { ...p, status: "confirmed", delivery_code: code } : p
         )
       );
-      toast.success("Payment recorded! Your delivery code is ready.");
+      toast.success("Order confirmed! Your delivery code is ready.");
     } catch (err: any) {
-      toast.error("Payment failed: " + (err?.message || "Unknown error"));
+      toast.error("Confirmation failed: " + (err?.message || "Unknown error"));
     } finally {
       setPayingId(null);
     }
@@ -704,7 +704,7 @@ const ProfilePage = () => {
                     <PrescriptionCard
                       key={rx.id}
                       rx={rx}
-                      onPayNow={() => handlePayNow(rx)}
+                      onPayNow={() => handleConfirmCOD(rx)}
                       paying={payingId === rx.id}
                       isExpanded={expandedId === rx.id}
                       onToggle={() => toggleExpand(rx.id)}
@@ -781,9 +781,9 @@ const PrescriptionCard = ({
   const meds = Array.isArray(rx.medicines) ? rx.medicines : [];
   const availMeds = meds.filter((m) => m.available);
   const unavailMeds = meds.filter((m) => !m.available);
-  const isPaid = rx.payment_status === "paid";
-  const hasCode = isPaid && rx.delivery_code;
-  const needsPay = rx.status === "reviewed" && !isPaid && rx.grand_total && rx.grand_total > 0;
+  const isConfirmed = rx.status === "confirmed" || rx.status === "dispatched" || rx.status === "completed";
+  const hasCode = isConfirmed && rx.delivery_code;
+  const needsPay = rx.status === "reviewed" && rx.grand_total && rx.grand_total > 0;
   const isDispatched = rx.status === "dispatched";
   const isCompleted = rx.status === "completed";
 
@@ -920,29 +920,29 @@ const PrescriptionCard = ({
         </div>
       )}
 
-      {/* ── PAY NOW SECTION (shown when reviewed + not paid) ── */}
+      {/* ── CONFIRM SECTION (shown when reviewed) ── */}
       {needsPay && (
-        <div className="mx-4 mb-4 bg-blue-50 border border-blue-200 rounded-2xl p-4">
+        <div className="mx-4 mb-4 bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
           <div className="flex items-start gap-3 mb-3">
-            <div className="h-9 w-9 rounded-xl bg-blue-100 flex items-center justify-center shrink-0">
-              <CreditCard className="h-5 w-5 text-blue-600" />
+            <div className="h-9 w-9 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
+              <Package className="h-5 w-5 text-emerald-600" />
             </div>
             <div>
-              <p className="text-sm font-black text-blue-800">Payment Required</p>
-              <p className="text-[10px] font-medium text-blue-600">
-                Pay ₹{rx.grand_total} to confirm your order and receive your delivery code
+              <p className="text-sm font-black text-emerald-800">Action Required</p>
+              <p className="text-[10px] font-medium text-emerald-600">
+                Confirm your order to receive your delivery code. Payment of ₹{rx.grand_total} will be collected on delivery.
               </p>
             </div>
           </div>
           <button
             onClick={onPayNow}
             disabled={paying}
-            className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-sm shadow-lg shadow-blue-200 flex items-center justify-center gap-2 transition-all disabled:opacity-70"
+            className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm shadow-lg shadow-emerald-200 flex items-center justify-center gap-2 transition-all disabled:opacity-70"
           >
             {paying ? (
               <><span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Processing…</>
             ) : (
-              <><IndianRupee className="h-4 w-4" /> Pay ₹{rx.grand_total} Now</>
+              <><CheckCircle2 className="h-4 w-4" /> Confirm Order (COD)</>
             )}
           </button>
         </div>

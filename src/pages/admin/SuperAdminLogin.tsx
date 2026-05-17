@@ -18,7 +18,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { getURL } from "@/lib/utils";
-import { checkIsLoggedIn, isRateLimited, recordFailedAttempt, clearAttempts } from "@/lib/adminAuth";
+import { isRateLimited, recordFailedAttempt, clearAttempts, writeSuperAdminSession, clearSuperAdminSession } from "@/lib/adminAuth";
 
 const SuperAdminLogin = () => {
   const navigate = useNavigate();
@@ -32,10 +32,12 @@ const SuperAdminLogin = () => {
   const [resetLoading, setResetLoading] = useState(false);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Redirect if already authenticated
+  // SECURITY: Wipe any existing super admin session + Supabase JWT on every visit.
+  // Forces re-authentication even if the browser has a cached session.
   useEffect(() => {
-    checkIsLoggedIn("super").then(ok => { if (ok) navigate("/admin/super"); });
-  }, [navigate]);
+    clearSuperAdminSession();
+    supabase.auth.signOut();
+  }, []);
 
   // Cleanup countdown on unmount
   useEffect(() => () => { if (countdownRef.current) clearInterval(countdownRef.current); }, []);
@@ -79,7 +81,7 @@ const SuperAdminLogin = () => {
       // ── Role check: must be super admin (verified in adminAuth.verifySuperAdminSession) ──
       // verifySuperAdminSession checks JWT metadata OR DB admin_whitelist
       const { verifySuperAdminSession } = await import("@/lib/adminAuth");
-      const isAuthorized = await verifySuperAdminSession();
+      const isAuthorized = await verifySuperAdminSession(true);
 
       if (!isAuthorized) {
         // Sign out the Supabase session immediately — user is authenticated but not authorized
@@ -90,6 +92,7 @@ const SuperAdminLogin = () => {
 
       // ── Success ──
       clearAttempts(cleanEmail);
+      writeSuperAdminSession(); // Write explicit session flag (clears on tab close)
       toast.success("Access granted. Welcome to the Super Admin portal.");
       navigate("/admin/super");
     } catch (err: unknown) {

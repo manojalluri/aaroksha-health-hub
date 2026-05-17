@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from "react";
-import { 
-  CreditCard, Search, Calendar, Filter, 
-  IndianRupee, Download, CheckCircle2, 
-  Clock, X, RefreshCw, Loader2, ArrowUpRight, ArrowDownLeft, Building2, ChevronRight, FileText
+import React, { useState } from "react";
+import {
+  Search, IndianRupee, Download, CheckCircle2,
+  Clock, X, RefreshCw, Loader2, ArrowDownLeft, ArrowUpRight,
+  Building2, FileText, AlertCircle
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
@@ -15,402 +15,394 @@ interface SettlementManagerProps {
   partnerType?: string;
 }
 
-export const SettlementManager: React.FC<SettlementManagerProps> = ({ userType, partnerId, partnerType }) => {
-  const queryClient = useQueryClient();
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("ALL");
-  const [directionFilter, setDirectionFilter] = useState("ALL");
-  const [dateFilter, setDateFilter] = useState("all");
-  const [selectedSettlement, setSelectedSettlement] = useState<any>(null);
-  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+const STATUS_LABEL: Record<string, string> = {
+  PENDING_RECEIVE:     "Pending",
+  PARTNER_MARKED_PAID: "Partner Paid (Awaiting Confirm)",
+  RECEIVED:            "Received ✓",
+  PENDING_PAYOUT:      "Pending",
+  ADMIN_MARKED_PAID:   "Admin Paid (Awaiting Confirm)",
+  PAID:                "Paid ✓",
+};
 
-  // Fetch Settlements
+const STATUS_COLOR: Record<string, string> = {
+  PENDING_RECEIVE:     "bg-amber-50 text-amber-700 border-amber-200",
+  PARTNER_MARKED_PAID: "bg-purple-50 text-purple-700 border-purple-200",
+  RECEIVED:            "bg-emerald-50 text-emerald-700 border-emerald-200",
+  PENDING_PAYOUT:      "bg-orange-50 text-orange-700 border-orange-200",
+  ADMIN_MARKED_PAID:   "bg-purple-50 text-purple-700 border-purple-200",
+  PAID:                "bg-blue-50 text-blue-700 border-blue-200",
+};
+
+export const SettlementManager: React.FC<SettlementManagerProps> = ({ userType, partnerId }) => {
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [activeTab, setActiveTab] = useState<"RECEIVABLE" | "PAYABLE">("RECEIVABLE");
+  const [dateFilter, setDateFilter] = useState("all");
+  const [selected, setSelected] = useState<any>(null);
+
   const { data: settlements = [], isLoading, refetch } = useQuery({
-    queryKey: ["settlements", userType, partnerId, dateFilter, statusFilter, directionFilter],
+    queryKey: ["settlements", userType, partnerId, dateFilter],
     queryFn: async () => {
       let q = supabase.from("settlements").select("*").order("created_at", { ascending: false });
-      
-      if (userType === "partner" && partnerId) {
-        q = q.eq("partner_id", partnerId);
+      if (userType === "partner" && partnerId) q = q.eq("partner_id", partnerId);
+      if (dateFilter === "today") {
+        const d = new Date(); d.setHours(0, 0, 0, 0);
+        q = q.gte("created_at", d.toISOString());
+      } else if (dateFilter === "week") {
+        const d = new Date(); d.setDate(d.getDate() - 7);
+        q = q.gte("created_at", d.toISOString());
+      } else if (dateFilter === "month") {
+        const d = new Date(); d.setMonth(d.getMonth() - 1);
+        q = q.gte("created_at", d.toISOString());
       }
-      
-      if (statusFilter !== "ALL") {
-        q = q.eq("settlement_status", statusFilter);
-      }
-
-      if (directionFilter !== "ALL") {
-        q = q.eq("settlement_direction", directionFilter);
-      }
-
-      // Handle dates
-      if (dateFilter !== "all") {
-        const today = new Date();
-        if (dateFilter === "today") {
-          q = q.gte("created_at", new Date(today.setHours(0,0,0,0)).toISOString());
-        } else if (dateFilter === "week") {
-          const lastWeek = new Date(today.setDate(today.getDate() - 7));
-          q = q.gte("created_at", lastWeek.toISOString());
-        } else if (dateFilter === "month") {
-          const lastMonth = new Date(today.setMonth(today.getMonth() - 1));
-          q = q.gte("created_at", lastMonth.toISOString());
-        }
-      }
-
       const { data, error } = await q;
       if (error) throw error;
       return data || [];
     },
-    refetchInterval: 10000, // Sync every 10 seconds
+    refetchInterval: 15000,
   });
 
-  // Fetch History for selected settlement
-  const { data: history = [], isLoading: historyLoading } = useQuery({
-    queryKey: ["settlement_history", selectedSettlement?.id],
+  const { data: history = [], isLoading: histLoading } = useQuery({
+    queryKey: ["settlement_history", selected?.id],
     queryFn: async () => {
-      if (!selectedSettlement) return [];
+      if (!selected) return [];
       const { data, error } = await supabase
-        .from("settlement_history")
-        .select("*")
-        .eq("settlement_id", selectedSettlement.id)
-        .order("created_at", { ascending: false });
+        .from("settlement_history").select("*")
+        .eq("settlement_id", selected.id).order("created_at", { ascending: false });
       if (error) throw error;
       return data || [];
     },
-    enabled: !!selectedSettlement && isHistoryModalOpen,
+    enabled: !!selected,
   });
 
-  // Update Status Mutation
-  const updateStatusMutation = useMutation({
-    mutationFn: async ({ id, newStatus, notes }: { id: string, newStatus: string, notes: string }) => {
-      const { data, error } = await supabase.rpc("update_settlement_status", {
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, newStatus }: { id: string; newStatus: string }) => {
+      const { error } = await supabase.rpc("update_settlement_status", {
         p_settlement_id: id,
         p_new_status: newStatus,
         p_updated_by: userType === "super_admin" ? "Super Admin" : "Partner",
-        p_notes: notes,
-        p_transaction_ref: `TXN-${Date.now()}`
+        p_notes: `Marked as ${newStatus}`,
+        p_transaction_ref: `TXN-${Date.now()}`,
       });
       if (error) throw error;
-      return data;
     },
     onSuccess: () => {
-      toast.success("Settlement status updated successfully");
+      toast.success("Settlement updated!");
       queryClient.invalidateQueries({ queryKey: ["settlements"] });
-      if (selectedSettlement) {
-        queryClient.invalidateQueries({ queryKey: ["settlement_history"] });
-      }
-      setIsHistoryModalOpen(false);
-      setSelectedSettlement(null);
+      queryClient.invalidateQueries({ queryKey: ["settlement_history"] });
+      setSelected(null);
     },
-    onError: (err: any) => {
-      toast.error(err.message || "Failed to update status");
-    }
+    onError: (e: any) => toast.error(e.message || "Update failed"),
   });
 
-  // Calculate stats
-  const pendingReceivables = settlements.filter(s => s.settlement_status === "PENDING_RECEIVE").reduce((sum, s) => sum + Number(s.net_settlement_amount), 0);
-  const receivedAmount = settlements.filter(s => s.settlement_status === "RECEIVED").reduce((sum, s) => sum + Number(s.net_settlement_amount), 0);
-  const pendingPayouts = settlements.filter(s => s.settlement_status === "PENDING_PAYOUT").reduce((sum, s) => sum + Number(s.net_settlement_amount), 0);
-  const paidAmount = settlements.filter(s => s.settlement_status === "PAID").reduce((sum, s) => sum + Number(s.net_settlement_amount), 0);
-
-  const handleUpdateStatus = (settlement: any, newStatus: string) => {
-    if (!confirm(`Are you sure you want to mark this settlement as ${newStatus.replace('_', ' ')}?`)) return;
-    
-    updateStatusMutation.mutate({
-      id: settlement.id,
-      newStatus,
-      notes: `Manually marked as ${newStatus} by ${userType === "super_admin" ? "Super Admin" : "Partner"}`
-    });
+  const confirm = (s: any, status: string) => {
+    if (!window.confirm(`Mark as ${status.replace(/_/g, " ")}?`)) return;
+    updateMutation.mutate({ id: s.id, newStatus: status });
   };
 
-  const filteredSettlements = settlements.filter(s => {
-    if (!searchTerm) return true;
-    const term = searchTerm.toLowerCase();
-    return (s.order_id?.toLowerCase().includes(term) || 
-            s.partner_name?.toLowerCase().includes(term) ||
-            s.transaction_id?.toLowerCase().includes(term));
-  });
+  // ── Stats ──────────────────────────────────────────────────────────────────
+  const rec   = settlements.filter(s => s.settlement_direction === "RECEIVABLE");
+  const pay   = settlements.filter(s => s.settlement_direction === "PAYABLE");
+
+  const pendingReceive   = rec.filter(s => !["RECEIVED"].includes(s.settlement_status)).reduce((a, s) => a + Number(s.commission_amount), 0);
+  const totalReceived    = rec.filter(s => s.settlement_status === "RECEIVED").reduce((a, s) => a + Number(s.commission_amount), 0);
+  const pendingPay       = pay.filter(s => !["PAID"].includes(s.settlement_status)).reduce((a, s) => a + Number(s.commission_amount), 0);
+  const totalPaid        = pay.filter(s => s.settlement_status === "PAID").reduce((a, s) => a + Number(s.commission_amount), 0);
+  const actionCount      = settlements.filter(s => s.settlement_status === "PARTNER_MARKED_PAID" || s.settlement_status === "ADMIN_MARKED_PAID").length;
+
+  // ── Filtered list ──────────────────────────────────────────────────────────
+  const filtered = settlements
+    .filter(s => s.settlement_direction === activeTab)
+    .filter(s => !search || s.order_id?.toLowerCase().includes(search.toLowerCase()) || s.partner_name?.toLowerCase().includes(search.toLowerCase()));
 
   const downloadCSV = () => {
-    const headers = "Order ID,Transaction ID,Partner Name,Type,Mode,Direction,Gross,Commission %,Commission Amt,Net Amt,Status,Date\n";
-    const rows = filteredSettlements.map(s => 
-      `${s.order_id},${s.transaction_id || ''},${s.partner_name || ''},${s.partner_type},${s.settlement_mode},${s.settlement_direction},${s.gross_amount},${s.commission_percentage},${s.commission_amount},${s.net_settlement_amount},${s.settlement_status},${s.created_at}`
-    ).join("\n");
-    
-    const blob = new Blob([headers + rows], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Settlements_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const rows = filtered.map(s =>
+      `${s.order_id},${s.partner_name},${s.partner_type},${s.settlement_direction},${s.gross_amount},${s.commission_percentage}%,${s.commission_amount},${s.settlement_status},${s.created_at}`
+    );
+    const blob = new Blob(["Order,Partner,Type,Direction,Gross,Rate,Commission,Status,Date\n" + rows.join("\n")], { type: "text/csv" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+    a.download = `Settlements_${format(new Date(), "yyyy-MM-dd")}.csv`; a.click();
   };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      
-      <div className="flex items-center justify-between">
+
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-black text-slate-800">Settlement Management</h2>
-          <p className="text-slate-500 text-sm">Enterprise accounting & reconciliations</p>
+          <p className="text-slate-400 text-sm">Commission tracking & reconciliation</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex gap-2">
           <button onClick={() => refetch()} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50">
             <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} /> Sync
           </button>
-          <button onClick={downloadCSV} className="flex items-center gap-2 px-4 py-2 bg-[#0F172A] text-white rounded-xl text-sm font-bold shadow-lg shadow-slate-200 hover:bg-slate-800">
+          <button onClick={downloadCSV} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-bold shadow hover:bg-slate-700">
             <Download className="h-4 w-4" /> Export CSV
           </button>
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: "Pending Receivables", value: pendingReceivables, icon: <ArrowDownLeft className="h-5 w-5" />, color: "text-amber-600", bg: "bg-amber-50" },
-          { label: "Received Amount", value: receivedAmount, icon: <CheckCircle2 className="h-5 w-5" />, color: "text-emerald-600", bg: "bg-emerald-50" },
-          { label: "Pending Payouts", value: pendingPayouts, icon: <ArrowUpRight className="h-5 w-5" />, color: "text-orange-600", bg: "bg-orange-50" },
-          { label: "Paid Amount", value: paidAmount, icon: <IndianRupee className="h-5 w-5" />, color: "text-blue-600", bg: "bg-blue-50" },
-        ].map((stat, i) => (
-          <div key={i} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-            <div className={`h-12 w-12 rounded-xl flex items-center justify-center shrink-0 ${stat.bg} ${stat.color}`}>
-              {stat.icon}
+      {/* Action Alert */}
+      {actionCount > 0 && (
+        <div className="bg-purple-50 border border-purple-200 rounded-2xl px-5 py-4 flex items-center gap-3">
+          <AlertCircle className="h-5 w-5 text-purple-600 shrink-0" />
+          <p className="flex-1 text-sm font-bold text-purple-800">
+            {actionCount} settlement{actionCount > 1 ? "s" : ""} waiting for your confirmation!
+          </p>
+          <button onClick={() => setActiveTab("RECEIVABLE")} className="text-xs font-black text-purple-600 underline">View</button>
+        </div>
+      )}
+
+      {/* Big Stats — 2 clear flows */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+        {/* RECEIVABLE block — Partner owes Admin commission */}
+        <div className="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 rounded-3xl p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="h-12 w-12 bg-amber-100 rounded-2xl flex items-center justify-center">
+              <ArrowDownLeft className="h-6 w-6 text-amber-600" />
             </div>
             <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{stat.label}</p>
-              <p className="text-2xl font-black text-slate-800">₹{stat.value.toLocaleString("en-IN")}</p>
+              <p className="text-xs font-black text-amber-700 uppercase tracking-widest">Receivables</p>
+              <p className="text-[11px] text-amber-600 font-medium">Partner collected cash → owes commission to you</p>
             </div>
           </div>
-        ))}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white/70 rounded-2xl p-4">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Pending Collection</p>
+              <p className="text-2xl font-black text-amber-700">₹{pendingReceive.toLocaleString("en-IN")}</p>
+            </div>
+            <div className="bg-white/70 rounded-2xl p-4">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Collected ✓</p>
+              <p className="text-2xl font-black text-emerald-700">₹{totalReceived.toLocaleString("en-IN")}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setActiveTab("RECEIVABLE")}
+            className={`w-full py-2.5 rounded-xl text-sm font-black transition-all ${activeTab === "RECEIVABLE" ? "bg-amber-600 text-white shadow-lg shadow-amber-200" : "bg-white/60 text-amber-700 hover:bg-white"}`}
+          >
+            {activeTab === "RECEIVABLE" ? "▸ Currently Viewing" : "View Receivables →"}
+          </button>
+        </div>
+
+        {/* PAYABLE block — Admin owes Partner net amount */}
+        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-3xl p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="h-12 w-12 bg-blue-100 rounded-2xl flex items-center justify-center">
+              <ArrowUpRight className="h-6 w-6 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-xs font-black text-blue-700 uppercase tracking-widest">Payables</p>
+              <p className="text-[11px] text-blue-600 font-medium">Platform collected online → owes commission to partner</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white/70 rounded-2xl p-4">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Pending Payout</p>
+              <p className="text-2xl font-black text-blue-700">₹{pendingPay.toLocaleString("en-IN")}</p>
+            </div>
+            <div className="bg-white/70 rounded-2xl p-4">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Paid Out ✓</p>
+              <p className="text-2xl font-black text-emerald-700">₹{totalPaid.toLocaleString("en-IN")}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setActiveTab("PAYABLE")}
+            className={`w-full py-2.5 rounded-xl text-sm font-black transition-all ${activeTab === "PAYABLE" ? "bg-blue-600 text-white shadow-lg shadow-blue-200" : "bg-white/60 text-blue-700 hover:bg-white"}`}
+          >
+            {activeTab === "PAYABLE" ? "▸ Currently Viewing" : "View Payables →"}
+          </button>
+        </div>
       </div>
 
-      {/* Filters & Search */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row items-center gap-4">
+      {/* Date Filter & Search */}
+      <div className="bg-white border border-slate-100 rounded-2xl p-4 flex flex-col md:flex-row gap-3 items-center shadow-sm">
         <div className="relative flex-1 w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <input 
-            type="text" 
-            placeholder="Search Order ID, Partner..." 
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-blue-400 focus:bg-white transition-all"
+          <input
+            type="text" placeholder="Search Order ID or Partner..."
+            value={search} onChange={e => setSearch(e.target.value)}
+            className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-blue-400"
           />
         </div>
-        
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none w-full md:w-auto">
-            <option value="ALL">All Statuses</option>
-            <option value="PENDING_RECEIVE">Pending Receive</option>
-            <option value="RECEIVED">Received</option>
-            <option value="PENDING_PAYOUT">Pending Payout</option>
-            <option value="PAID">Paid</option>
-          </select>
-          <select value={directionFilter} onChange={e => setDirectionFilter(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none w-full md:w-auto">
-            <option value="ALL">All Types</option>
-            <option value="RECEIVABLE">Receivable (To Us)</option>
-            <option value="PAYABLE">Payable (To Partner)</option>
-          </select>
-          <select value={dateFilter} onChange={e => setDateFilter(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none w-full md:w-auto">
-            <option value="all">All Time</option>
-            <option value="today">Today</option>
-            <option value="week">Past 7 Days</option>
-            <option value="month">Past 30 Days</option>
-          </select>
-        </div>
+        <select value={dateFilter} onChange={e => setDateFilter(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none">
+          <option value="all">All Time</option>
+          <option value="today">Today</option>
+          <option value="week">Past 7 Days</option>
+          <option value="month">Past 30 Days</option>
+        </select>
       </div>
 
       {/* Table */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-50 flex items-center gap-3">
+          <div className={`h-2 w-2 rounded-full ${activeTab === "RECEIVABLE" ? "bg-amber-500" : "bg-blue-500"}`} />
+          <h3 className="font-black text-slate-800 text-sm">
+            {activeTab === "RECEIVABLE" ? "Receivables — Commission to Collect from Partners" : "Payables — Commission to Pay Out to Partners"}
+          </h3>
+          <span className="ml-auto text-xs font-black text-slate-400 bg-slate-100 px-3 py-1 rounded-full">{filtered.length} records</span>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Order Info</th>
-                {userType === "super_admin" && (
-                  <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Partner</th>
-                )}
-                <th className="px-6 py-4 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Financials</th>
-                <th className="px-6 py-4 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Status</th>
-                <th className="px-6 py-4 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Action</th>
+              <tr className="bg-slate-50/80 border-b border-slate-100">
+                <th className="px-6 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Order</th>
+                {userType === "super_admin" && <th className="px-6 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Partner</th>}
+                <th className="px-6 py-3 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">Order Gross</th>
+                <th className="px-6 py-3 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">Commission</th>
+                <th className="px-6 py-3 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
+                <th className="px-6 py-3 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filteredSettlements.length === 0 ? (
-                <tr>
-                  <td colSpan={userType === "super_admin" ? 5 : 4} className="px-6 py-12 text-center text-slate-400 text-sm font-medium">
-                    No settlement records found.
+              {isLoading ? (
+                <tr><td colSpan={6} className="py-12 text-center"><Loader2 className="h-6 w-6 animate-spin text-slate-400 mx-auto" /></td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={6} className="py-12 text-center text-slate-400 text-sm font-medium">No records in this category.</td></tr>
+              ) : filtered.map(s => (
+                <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="px-6 py-4">
+                    <p className="font-bold text-slate-800 text-sm">#{s.order_id}</p>
+                    <p className="text-[10px] text-slate-400">{format(new Date(s.created_at), "dd MMM yyyy, hh:mm a")}</p>
+                  </td>
+                  {userType === "super_admin" && (
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <div className="h-7 w-7 bg-slate-100 rounded-lg flex items-center justify-center"><Building2 className="h-3.5 w-3.5 text-slate-500" /></div>
+                        <div>
+                          <p className="font-bold text-slate-700 text-sm">{s.partner_name || "—"}</p>
+                          <p className="text-[10px] text-slate-400 uppercase font-bold">{s.partner_type}</p>
+                        </div>
+                      </div>
+                    </td>
+                  )}
+                  <td className="px-6 py-4 text-right">
+                    <p className="font-bold text-slate-700 text-sm">₹{Number(s.gross_amount).toLocaleString("en-IN")}</p>
+                    <p className="text-[10px] text-slate-400">{s.commission_percentage}% rate</p>
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <p className={`font-black text-base ${s.settlement_direction === "RECEIVABLE" ? "text-amber-600" : "text-blue-600"}`}>
+                      ₹{Number(s.commission_amount).toLocaleString("en-IN")}
+                    </p>
+                  </td>
+                  <td className="px-6 py-4 text-center">
+                    <span className={`inline-flex items-center px-2.5 py-1 rounded-lg border text-[10px] font-black uppercase ${STATUS_COLOR[s.settlement_status] || "bg-slate-50 text-slate-600 border-slate-200"}`}>
+                      {STATUS_LABEL[s.settlement_status] || s.settlement_status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <button onClick={() => setSelected(s)} className="h-8 w-8 rounded-lg bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-700 flex items-center justify-center transition-all" title="View History">
+                        <FileText className="h-4 w-4" />
+                      </button>
+
+                      {/* RECEIVABLE flow */}
+                      {s.settlement_status === "PENDING_RECEIVE" && userType === "partner" && (
+                        <button onClick={() => confirm(s, "PARTNER_MARKED_PAID")} disabled={updateMutation.isPending} className="px-3 py-1.5 bg-amber-500 text-white text-[10px] font-black rounded-lg hover:bg-amber-600 transition-all">
+                          Mark Paid →
+                        </button>
+                      )}
+                      {s.settlement_status === "PENDING_RECEIVE" && userType === "super_admin" && (
+                        <span className="text-[10px] text-slate-400 font-bold">Awaiting partner</span>
+                      )}
+                      {s.settlement_status === "PARTNER_MARKED_PAID" && userType === "super_admin" && (
+                        <button onClick={() => confirm(s, "RECEIVED")} disabled={updateMutation.isPending} className="px-3 py-1.5 bg-emerald-600 text-white text-[10px] font-black rounded-lg hover:bg-emerald-700 transition-all shadow shadow-emerald-200">
+                          ✓ Confirm Received
+                        </button>
+                      )}
+                      {s.settlement_status === "PARTNER_MARKED_PAID" && userType === "partner" && (
+                        <span className="text-[10px] text-purple-600 font-bold">Awaiting admin…</span>
+                      )}
+
+                      {/* PAYABLE flow */}
+                      {s.settlement_status === "PENDING_PAYOUT" && userType === "super_admin" && (
+                        <button onClick={() => confirm(s, "ADMIN_MARKED_PAID")} disabled={updateMutation.isPending} className="px-3 py-1.5 bg-blue-600 text-white text-[10px] font-black rounded-lg hover:bg-blue-700 transition-all shadow shadow-blue-200">
+                          Mark Paid →
+                        </button>
+                      )}
+                      {s.settlement_status === "PENDING_PAYOUT" && userType === "partner" && (
+                        <span className="text-[10px] text-slate-400 font-bold">Awaiting admin</span>
+                      )}
+                      {s.settlement_status === "ADMIN_MARKED_PAID" && userType === "partner" && (
+                        <button onClick={() => confirm(s, "PAID")} disabled={updateMutation.isPending} className="px-3 py-1.5 bg-emerald-600 text-white text-[10px] font-black rounded-lg hover:bg-emerald-700 transition-all shadow shadow-emerald-200">
+                          ✓ Confirm Received
+                        </button>
+                      )}
+                      {s.settlement_status === "ADMIN_MARKED_PAID" && userType === "super_admin" && (
+                        <span className="text-[10px] text-purple-600 font-bold">Awaiting partner…</span>
+                      )}
+                    </div>
                   </td>
                 </tr>
-              ) : (
-                filteredSettlements.map((s) => (
-                  <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-6 py-4">
-                      <p className="font-bold text-slate-900 text-sm">#{s.order_id}</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{format(new Date(s.created_at), 'dd MMM yyyy, hh:mm a')}</p>
-                    </td>
-                    
-                    {userType === "super_admin" && (
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <div className="h-8 w-8 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center shrink-0">
-                            <Building2 className="h-4 w-4" />
-                          </div>
-                          <div>
-                            <p className="font-bold text-slate-800 text-sm">{s.partner_name || "Unknown"}</p>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{s.partner_type}</p>
-                          </div>
-                        </div>
-                      </td>
-                    )}
-
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex flex-col items-end gap-1">
-                        <p className="text-xs text-slate-500"><span className="font-medium">Gross:</span> ₹{s.gross_amount}</p>
-                        <p className="text-[10px] text-slate-400"><span className="font-medium">Comm ({s.commission_percentage}%):</span> <span className="text-red-500 font-bold">₹{s.commission_amount}</span></p>
-                        <div className="h-px w-16 bg-slate-100 my-0.5" />
-                        <p className={`text-sm font-black ${s.settlement_direction === "RECEIVABLE" ? "text-emerald-600" : "text-blue-600"}`}>
-                          {s.settlement_direction === "RECEIVABLE" ? "+₹" : "-₹"}{s.net_settlement_amount}
-                        </p>
-                      </div>
-                    </td>
-
-                    <td className="px-6 py-4 text-center">
-                      <div className="flex flex-col items-center gap-1.5">
-                        <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider ${
-                          s.settlement_status === "RECEIVED" ? "bg-emerald-50 text-emerald-600" :
-                          s.settlement_status === "PAID" ? "bg-blue-50 text-blue-600" :
-                          "bg-amber-50 text-amber-600"
-                        }`}>
-                          {s.settlement_status.replace("_", " ")}
-                        </span>
-                        <span className="text-[9px] font-bold text-slate-400">
-                          {s.settlement_mode.replace("_", " ")}
-                        </span>
-                      </div>
-                    </td>
-
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button 
-                          onClick={() => { setSelectedSettlement(s); setIsHistoryModalOpen(true); }}
-                          className="h-8 w-8 rounded-lg bg-slate-50 text-slate-400 hover:text-slate-800 hover:bg-slate-100 flex items-center justify-center transition-all"
-                          title="View Details"
-                        >
-                          <FileText className="h-4 w-4" />
-                        </button>
-                        
-                        {userType === "super_admin" && s.settlement_status === "PENDING_RECEIVE" && (
-                          <button 
-                            onClick={() => handleUpdateStatus(s, "RECEIVED")}
-                            disabled={updateStatusMutation.isPending}
-                            className="px-3 py-1.5 bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider rounded-lg hover:bg-emerald-700 transition-all shadow-md shadow-emerald-200"
-                          >
-                            Mark Received
-                          </button>
-                        )}
-                        
-                        {userType === "super_admin" && s.settlement_status === "PENDING_PAYOUT" && (
-                          <button 
-                            onClick={() => handleUpdateStatus(s, "PAID")}
-                            disabled={updateStatusMutation.isPending}
-                            className="px-3 py-1.5 bg-blue-600 text-white text-[10px] font-black uppercase tracking-wider rounded-lg hover:bg-blue-700 transition-all shadow-md shadow-blue-200"
-                          >
-                            Mark Paid
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
+              ))}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* History Modal */}
-      {isHistoryModalOpen && selectedSettlement && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      {/* History Drawer */}
+      {selected && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setSelected(null)}>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <div>
-                <h3 className="text-lg font-black text-slate-800">Settlement Details</h3>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-0.5">Order #{selectedSettlement.order_id}</p>
+                <h3 className="font-black text-slate-800">Settlement Detail</h3>
+                <p className="text-xs text-slate-400 font-bold mt-0.5">Order #{selected.order_id}</p>
               </div>
-              <button onClick={() => setIsHistoryModalOpen(false)} className="h-8 w-8 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-700 transition-colors">
+              <button onClick={() => setSelected(null)} className="h-8 w-8 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-700">
                 <X className="h-4 w-4" />
               </button>
             </div>
-            
-            <div className="p-6 overflow-y-auto">
-              <div className="grid grid-cols-2 gap-4 mb-8">
-                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Financial Breakdown</p>
-                  <div className="space-y-1.5 mt-3">
-                    <div className="flex justify-between text-sm"><span className="text-slate-500">Gross Amount</span><span className="font-bold text-slate-700">₹{selectedSettlement.gross_amount}</span></div>
-                    <div className="flex justify-between text-sm"><span className="text-slate-500">Commission ({selectedSettlement.commission_percentage}%)</span><span className="font-bold text-red-500">-₹{selectedSettlement.commission_amount}</span></div>
-                    <div className="h-px bg-slate-200 my-2" />
-                    <div className="flex justify-between text-base"><span className="font-black text-slate-800">Net {selectedSettlement.settlement_direction === 'RECEIVABLE' ? 'Receivable' : 'Payable'}</span><span className="font-black text-blue-600">₹{selectedSettlement.net_settlement_amount}</span></div>
+            <div className="p-6 space-y-5">
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { label: "Gross Amount", value: `₹${Number(selected.gross_amount).toLocaleString("en-IN")}`, color: "text-slate-700" },
+                  { label: "Commission Rate", value: `${selected.commission_percentage}%`, color: "text-slate-700" },
+                  { label: "Commission Amt", value: `₹${Number(selected.commission_amount).toLocaleString("en-IN")}`, color: selected.settlement_direction === "RECEIVABLE" ? "text-amber-600" : "text-blue-600" },
+                ].map((item, i) => (
+                  <div key={i} className="bg-slate-50 rounded-2xl p-3 border border-slate-100">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{item.label}</p>
+                    <p className={`text-base font-black ${item.color}`}>{item.value}</p>
                   </div>
-                </div>
-                
-                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Meta Information</p>
-                  <div className="space-y-2 mt-3">
-                    <div><span className="text-[10px] text-slate-400 block uppercase font-bold">Partner</span><span className="text-sm font-bold text-slate-700">{selectedSettlement.partner_name} ({selectedSettlement.partner_type})</span></div>
-                    <div><span className="text-[10px] text-slate-400 block uppercase font-bold">Mode</span><span className="text-sm font-bold text-slate-700">{selectedSettlement.settlement_mode.replace('_', ' ')}</span></div>
-                    <div><span className="text-[10px] text-slate-400 block uppercase font-bold">Status</span>
-                      <span className={`inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                        selectedSettlement.settlement_status.includes('PENDING') ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
-                      }`}>{selectedSettlement.settlement_status.replace('_', ' ')}</span>
-                    </div>
-                  </div>
-                </div>
+                ))}
               </div>
-
-              <h4 className="text-sm font-black text-slate-800 mb-4 flex items-center gap-2"><Clock className="h-4 w-4 text-slate-400" /> Timeline & History</h4>
-              
-              {historyLoading ? (
-                <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-blue-500" /></div>
-              ) : (
-                <div className="relative pl-4 space-y-6 before:absolute before:inset-y-0 before:left-[11px] before:w-0.5 before:bg-slate-100">
-                  {history.map((h: any, i: number) => (
-                    <div key={h.id} className="relative">
-                      <div className="absolute -left-[25px] top-1 h-3 w-3 rounded-full bg-blue-500 ring-4 ring-white" />
-                      <div className="bg-white border border-slate-100 rounded-xl p-3 shadow-sm ml-2">
-                        <div className="flex items-center justify-between mb-1">
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{format(new Date(h.created_at), 'dd MMM yyyy, hh:mm a')}</p>
-                          <p className="text-[9px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">By: {h.updated_by}</p>
+              <div className="flex items-center gap-3">
+                <span className={`px-3 py-1 rounded-lg border text-[10px] font-black uppercase ${selected.settlement_direction === "RECEIVABLE" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-blue-50 text-blue-700 border-blue-200"}`}>
+                  {selected.settlement_direction === "RECEIVABLE" ? "↓ Receivable" : "↑ Payable"}
+                </span>
+                <span className={`px-3 py-1 rounded-lg border text-[10px] font-black uppercase ${STATUS_COLOR[selected.settlement_status]}`}>
+                  {STATUS_LABEL[selected.settlement_status]}
+                </span>
+              </div>
+              <div>
+                <h4 className="text-sm font-black text-slate-700 mb-3 flex items-center gap-2"><Clock className="h-4 w-4 text-slate-400" /> Timeline</h4>
+                {histLoading ? (
+                  <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
+                ) : (
+                  <div className="space-y-3 max-h-52 overflow-y-auto pr-1">
+                    {history.map((h: any) => (
+                      <div key={h.id} className="flex gap-3">
+                        <div className="w-2 h-2 mt-1.5 rounded-full bg-blue-500 shrink-0" />
+                        <div className="bg-slate-50 rounded-xl p-3 flex-1 border border-slate-100">
+                          <div className="flex items-center justify-between mb-1">
+                            <p className="text-[10px] font-black text-slate-400">{format(new Date(h.created_at), "dd MMM, hh:mm a")}</p>
+                            <p className="text-[9px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-bold">{h.updated_by}</p>
+                          </div>
+                          <p className="text-xs font-bold text-slate-700">
+                            {h.previous_status ? <><span className="text-slate-400">{h.previous_status}</span> → <span className="text-blue-600">{h.new_status}</span></> : <>Created: <span className="text-blue-600">{h.new_status}</span></>}
+                          </p>
+                          {h.payment_notes && <p className="text-[10px] text-slate-400 mt-1 italic">"{h.payment_notes}"</p>}
                         </div>
-                        <p className="text-sm font-bold text-slate-700">
-                          {h.previous_status ? (
-                            <>Status changed from <span className="text-slate-400">{h.previous_status}</span> to <span className="text-blue-600">{h.new_status}</span></>
-                          ) : (
-                            <>Settlement created with status <span className="text-blue-600">{h.new_status}</span></>
-                          )}
-                        </p>
-                        {h.payment_notes && (
-                          <p className="text-xs text-slate-500 mt-2 bg-slate-50 p-2 rounded-lg italic">"{h.payment_notes}"</p>
-                        )}
-                        {h.transaction_reference && (
-                          <p className="text-xs font-mono text-slate-400 mt-1">Ref: {h.transaction_reference}</p>
-                        )}
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            
-            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end">
-              <button onClick={() => setIsHistoryModalOpen(false)} className="px-5 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-bold rounded-xl hover:bg-slate-100 transition-colors">
-                Close
-              </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
       )}
-
     </div>
   );
 };

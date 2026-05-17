@@ -110,6 +110,7 @@ interface Partner {
   commission_type: "percentage" | "fixed";
   commission_rate: number;
   partner_id: string;
+  settlement_model?: "DYNAMIC" | "PLATFORM_PAYS_PARTNER" | "PARTNER_PAYS_PLATFORM";
   category?: "lab" | "pharmacy";
   status: "active" | "hold" | "deleted";
   settings?: {
@@ -258,6 +259,7 @@ const SuperAdminDashboard = () => {
     logo_url: "",
     commission_type: "percentage" as "percentage" | "fixed",
     commission_rate: 10,
+    settlement_model: "DYNAMIC" as "DYNAMIC" | "PLATFORM_PAYS_PARTNER" | "PARTNER_PAYS_PLATFORM",
     settlement_cycle: "monthly" as "today" | "daily" | "weekly" | "monthly",
     category: "pharmacy" as "lab" | "pharmacy",
     settings: {
@@ -615,6 +617,7 @@ const SuperAdminDashboard = () => {
         logo_url: dataToSave.logo_url,
         commission_type: dataToSave.commission_type,
         commission_rate: dataToSave.commission_rate,
+        settlement_model: dataToSave.settlement_model || "DYNAMIC",
         settlement_cycle: dataToSave.settlement_cycle || "monthly",
         category: dataToSave.type === "logistics" ? dataToSave.category : null,
         partner_id: partnerId, 
@@ -3106,9 +3109,26 @@ const SuperAdminDashboard = () => {
                 </div>
               </div>
 
-              {/* Settlement Cycle */}
-              <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Settlement Cycle</label>
+              {/* Settlement Architecture */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1.5">Settlement Flow</label>
+                  <select
+                    value={editingPartner ? (editingPartner.settlement_model || "DYNAMIC") : newPartner.settlement_model}
+                    onChange={e => {
+                      const v = e.target.value as any;
+                      if (editingPartner) setEditingPartner({ ...editingPartner, settlement_model: v });
+                      else setNewPartner(p => ({ ...p, settlement_model: v }));
+                    }}
+                    className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-700 outline-none focus:border-blue-300 transition-all"
+                  >
+                    <option value="DYNAMIC">Dynamic (Per-Order)</option>
+                    <option value="PLATFORM_PAYS_PARTNER">We Pay Partner (Net Amount)</option>
+                    <option value="PARTNER_PAYS_PLATFORM">Partner Pays Us (Commission)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1.5">Settlement Cycle</label>
                 <div className="grid grid-cols-4 gap-2">
                   {(["today", "daily", "weekly", "monthly"] as const).map(c => {
                     const active = (editingPartner?.settlement_cycle ?? newPartner.settlement_cycle) === c;
@@ -3123,6 +3143,7 @@ const SuperAdminDashboard = () => {
                     );
                   })}
                 </div>
+              </div>
               </div>
 
               {/* Info box */}

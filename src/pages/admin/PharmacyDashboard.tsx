@@ -548,7 +548,7 @@ const PharmacyDashboard = () => {
 
             {/* ════ SETTLEMENTS TAB ════ */}
             <TabsContent value="settlements" className="p-6 space-y-6">
-              <SettlementManager userType="partner" partnerId={partner?.partner_id || undefined} partnerType="pharmacy" />
+              <SettlementManager userType="partner" partnerId={partner?.id || undefined} partnerType="pharmacy" />
             </TabsContent>
           </Tabs>
         </div>

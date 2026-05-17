@@ -34,6 +34,29 @@ const ROLE_KEY      = "aaroksha_admin_role";
 const EXPIRY_KEY    = "aaroksha_admin_expiry";
 const SESSION_HOURS = 8;
 
+// ─── Super Admin explicit session flag ────────────────────────────────────────
+// Written on successful login, cleared on logout or login-page visit.
+// Prevents Supabase JWT cache from bypassing the login screen.
+const SA_SESSION_KEY = "aaroksha_sa_session";
+
+export const writeSuperAdminSession = (): void => {
+  const expiry = Date.now() + SESSION_HOURS * 60 * 60 * 1000;
+  sessionStorage.setItem(SA_SESSION_KEY, String(expiry));
+};
+
+export const hasSuperAdminSession = (): boolean => {
+  const expiry = Number(sessionStorage.getItem(SA_SESSION_KEY) ?? 0);
+  if (!expiry || Date.now() > expiry) {
+    sessionStorage.removeItem(SA_SESSION_KEY);
+    return false;
+  }
+  return true;
+};
+
+export const clearSuperAdminSession = (): void => {
+  sessionStorage.removeItem(SA_SESSION_KEY);
+};
+
 // ─── Rate limiting (in-memory, per-tab) ───────────────────────────────────────
 // For production at scale, move this to a Supabase Edge Function / Redis.
 const _attempts: Record<string, { count: number; firstAttempt: number; lockedUntil: number }> = {};
@@ -126,6 +149,7 @@ export const clearAdminSession = (): void => {
   sessionStorage.removeItem(SESSION_KEY);
   sessionStorage.removeItem(ROLE_KEY);
   sessionStorage.removeItem(EXPIRY_KEY);
+  sessionStorage.removeItem(SA_SESSION_KEY); // also clear super admin flag
   localStorage.removeItem("aaroksha_partner_session"); // clear legacy key
 };
 
@@ -139,7 +163,10 @@ export const clearAdminSession = (): void => {
  * The whitelist table is protected by RLS so only service-role can write it.
  * No emails are hardcoded in client-side code.
  */
-export const verifySuperAdminSession = async (): Promise<boolean> => {
+export const verifySuperAdminSession = async (skipFlagCheck: boolean = false): Promise<boolean> => {
+  // Step 0: Must have an explicit in-session flag set at login time
+  if (!skipFlagCheck && !hasSuperAdminSession()) return false;
+
   try {
     const { data: { session }, error: sessErr } = await supabase.auth.getSession();
     if (sessErr || !session) return false;
