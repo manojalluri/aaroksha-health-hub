@@ -846,13 +846,13 @@ const Index = () => {
                   Join thousands of patients who trust Aaroksha. Book your first appointment today.
                 </p>
               </div>
-              <Link
-                to="/doctors"
+              <button
+                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
                 className="inline-flex items-center gap-2 bg-white font-black text-sm px-7 py-3.5 rounded-2xl hover:bg-blue-50 active:scale-95 transition-all shadow-xl md:ml-8 whitespace-nowrap"
                 style={{ color: "#2563eb" }}
               >
                 Get Started Now <ChevronRight className="h-4 w-4" />
-              </Link>
+              </button>
             </div>
           </div>
 
