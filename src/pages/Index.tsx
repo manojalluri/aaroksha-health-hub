@@ -1,7 +1,7 @@
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import {
   FlaskConical, Calendar, Pill, Home, User, Clock,
-  ChevronRight, MapPin, Search, Bell, Star, ArrowRight, Building2,
+  ChevronRight, MapPin, Search, Bell, Star, ArrowRight, Building2, Phone, Mail, LifeBuoy
 } from "lucide-react";
 
 import { useState, useEffect, useRef } from "react";
@@ -554,6 +554,39 @@ const Index = () => {
               >
                 Get Started Now <ChevronRight className="h-4 w-4" />
               </Link>
+            </div>
+          </div>
+
+          {/* ── Help & Support (Accessible to Everyone) ── */}
+          <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm relative overflow-hidden mt-6 md:mt-10">
+            <div className="absolute -top-4 -right-4 p-4 opacity-[0.03]">
+              <LifeBuoy className="w-32 h-32 text-blue-600" />
+            </div>
+            <div className="relative z-10">
+              <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">Need Help?</p>
+              <h3 className="text-base font-black text-slate-800 mb-4">Customer Support</h3>
+              
+              <div className="space-y-3 md:space-y-0 md:flex md:gap-4">
+                <a href="tel:+918886363636" className="flex-1 flex items-center gap-3 bg-slate-50 border border-slate-100 p-3 rounded-2xl hover:bg-slate-100 active:scale-95 transition-all">
+                  <div className="h-10 w-10 bg-blue-100 rounded-xl flex items-center justify-center shrink-0">
+                    <Phone className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Call Us</p>
+                    <p className="text-sm font-black text-slate-700">+91 8886363636</p>
+                  </div>
+                </a>
+                
+                <a href="mailto:support@aaroksha.in" className="flex-1 flex items-center gap-3 bg-slate-50 border border-slate-100 p-3 rounded-2xl hover:bg-slate-100 active:scale-95 transition-all">
+                  <div className="h-10 w-10 bg-purple-100 rounded-xl flex items-center justify-center shrink-0">
+                    <Mail className="h-5 w-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Email Us</p>
+                    <p className="text-sm font-black text-slate-700">support@aaroksha.in</p>
+                  </div>
+                </a>
+              </div>
             </div>
           </div>
 
