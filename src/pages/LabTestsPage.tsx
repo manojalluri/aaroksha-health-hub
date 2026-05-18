@@ -370,10 +370,10 @@ const LabTestsPage = () => {
           )}
           <div className="flex-1">
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-              {step === "browse" ? "NABL Certified Labs" : step === "details" ? "Collection Details" : step === "checkout" ? "Confirm Order (Cash)" : "Confirmed!"}
+              {step === "browse" ? "Bhimavaram NABL Labs" : step === "details" ? "Collection Details" : step === "checkout" ? "Confirm Order (Cash)" : "Confirmed!"}
             </p>
             <h1 className="text-lg font-black text-slate-800 leading-tight">
-              {step === "browse" ? "Lab Tests" : step === "details" ? "Your Details" : step === "checkout" ? "Order Summary" : "Booking Placed"}
+              {step === "browse" ? "Lab Tests in Bhimavaram" : step === "details" ? "Your Details" : step === "checkout" ? "Order Summary" : "Booking Placed"}
             </h1>
           </div>
 

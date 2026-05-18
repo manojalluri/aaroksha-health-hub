@@ -1,13 +1,6 @@
 User-agent: *
 Allow: /
-
-# Block admin and auth routes from being indexed by search engines
 Disallow: /admin/
-Disallow: /auth/
-Disallow: /profile
-Disallow: /settings
-Disallow: /cart
-Disallow: /*?*
+Disallow: /profile/
 
-# Allow search engines to find the sitemap
 Sitemap: https://www.aaroksha.in/sitemap.xml

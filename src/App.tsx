@@ -16,6 +16,18 @@ import RefundPolicyPage from "./pages/RefundPolicyPage";
 import ReturnPolicyPage from "./pages/ReturnPolicyPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import { AuthProvider } from "./contexts/AuthContext";
+import {
+  LabTestsBhimavaram,
+  HomeSampleCollectionBhimavaram,
+  MedicineDeliveryBhimavaram,
+  FullBodyCheckupBhimavaram,
+  DiagnosticCenterBhimavaram,
+  BloodTestAtHomeBhimavaram,
+  PharmacyDeliveryBhimavaram,
+  HealthcareServicesBhimavaram,
+} from "./pages/seo/SEOPages";
+import BlogIndex from "./pages/blog/BlogIndex";
+import BlogPost from "./pages/blog/BlogPost";
 import HospitalDashboard from "./pages/admin/HospitalDashboard";
 import LabDashboard from "./pages/admin/LabDashboard";
 import PharmacyDashboard from "./pages/admin/PharmacyDashboard";
@@ -86,6 +98,7 @@ const AppRoutes = () => {
 
 
   return (
+    <>
     <Routes>
       {settings.is_maintenance && isCustomerPage ? (
         <Route path="*" element={<MaintenanceScreen />} />
@@ -103,6 +116,20 @@ const AppRoutes = () => {
           <Route path="/refund-policy" element={<RefundPolicyPage />} />
           <Route path="/return-policy" element={<ReturnPolicyPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
+          
+          {/* SEO Landing Pages */}
+          <Route path="/lab-tests-bhimavaram" element={<LabTestsBhimavaram />} />
+          <Route path="/home-sample-collection-bhimavaram" element={<HomeSampleCollectionBhimavaram />} />
+          <Route path="/medicine-delivery-bhimavaram" element={<MedicineDeliveryBhimavaram />} />
+          <Route path="/full-body-checkup-bhimavaram" element={<FullBodyCheckupBhimavaram />} />
+          <Route path="/diagnostic-center-bhimavaram" element={<DiagnosticCenterBhimavaram />} />
+          <Route path="/blood-test-at-home-bhimavaram" element={<BloodTestAtHomeBhimavaram />} />
+          <Route path="/pharmacy-delivery-bhimavaram" element={<PharmacyDeliveryBhimavaram />} />
+          <Route path="/healthcare-services-bhimavaram" element={<HealthcareServicesBhimavaram />} />
+          
+          {/* Blog Pages */}
+          <Route path="/blog" element={<BlogIndex />} />
+          <Route path="/blog/:slug" element={<BlogPost />} />
         </>
       )}
 
@@ -144,6 +171,7 @@ const AppRoutes = () => {
       
       {!settings.is_maintenance && <Route path="*" element={<NotFound />} />}
     </Routes>
+    </>
   );
 };
 

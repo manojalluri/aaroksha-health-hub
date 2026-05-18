@@ -150,8 +150,8 @@ const DoctorsPage = () => {
             <ChevronLeft className="h-5 w-5 text-slate-600" />
           </button>
           <div className="flex-1">
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Find a Specialist</p>
-            <h1 className="text-lg font-black text-slate-800 leading-tight">OP Booking</h1>
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Find a Specialist in Bhimavaram</p>
+            <h1 className="text-lg font-black text-slate-800 leading-tight">Doctor OP Booking</h1>
           </div>
         </div>
 

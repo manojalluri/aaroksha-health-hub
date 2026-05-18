@@ -289,10 +289,10 @@ const PrescriptionPage = () => {
           </button>
           <div className="flex-1">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              {mainTab === "my_orders" ? "History" : step === "upload" ? "Upload Prescription" : step === "details" ? "Your Details" : step === "processing" ? "Pharmacist Review" : step === "review" ? "Review & Order" : "Order Confirmed"}
+              {mainTab === "my_orders" ? "History" : step === "upload" ? "Bhimavaram Pharmacy Delivery" : step === "details" ? "Your Details" : step === "processing" ? "Pharmacist Review" : step === "review" ? "Review & Order" : "Order Confirmed"}
             </p>
             <h1 className="text-lg font-black text-slate-800 leading-tight">
-              {mainTab === "my_orders" ? "My Orders" : "Order Medicines"}
+              {mainTab === "my_orders" ? "My Orders" : "Order Medicines in Bhimavaram"}
             </h1>
           </div>
           <div className="h-9 w-9 rounded-xl bg-green-600 flex items-center justify-center">
