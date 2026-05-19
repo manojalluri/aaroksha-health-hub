@@ -161,20 +161,28 @@ export const SettlementManager: React.FC<SettlementManagerProps> = ({ userType, 
         <div className="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 rounded-3xl p-6 space-y-4">
           <div className="flex items-center gap-3">
             <div className="h-12 w-12 bg-amber-100 rounded-2xl flex items-center justify-center">
-              <ArrowDownLeft className="h-6 w-6 text-amber-600" />
+              {userType === "super_admin" ? <ArrowDownLeft className="h-6 w-6 text-amber-600" /> : <ArrowUpRight className="h-6 w-6 text-amber-600" />}
             </div>
             <div>
-              <p className="text-xs font-black text-amber-700 uppercase tracking-widest">Receivables</p>
-              <p className="text-[11px] text-amber-600 font-medium">Partner collected cash → owes commission to you</p>
+              <p className="text-xs font-black text-amber-700 uppercase tracking-widest">
+                {userType === "super_admin" ? "Receivables" : "Payables"}
+              </p>
+              <p className="text-[11px] text-amber-600 font-medium">
+                {userType === "super_admin" ? "Partner collected cash → owes commission to you" : "You collected cash → owe commission to platform"}
+              </p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-white/70 rounded-2xl p-4">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Pending Collection</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                {userType === "super_admin" ? "Pending Collection" : "Pending Payment"}
+              </p>
               <p className="text-2xl font-black text-amber-700">₹{pendingReceive.toLocaleString("en-IN")}</p>
             </div>
             <div className="bg-white/70 rounded-2xl p-4">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Collected ✓</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                {userType === "super_admin" ? "Collected ✓" : "Paid ✓"}
+              </p>
               <p className="text-2xl font-black text-emerald-700">₹{totalReceived.toLocaleString("en-IN")}</p>
             </div>
           </div>
@@ -182,7 +190,7 @@ export const SettlementManager: React.FC<SettlementManagerProps> = ({ userType, 
             onClick={() => setActiveTab("RECEIVABLE")}
             className={`w-full py-2.5 rounded-xl text-sm font-black transition-all ${activeTab === "RECEIVABLE" ? "bg-amber-600 text-white shadow-lg shadow-amber-200" : "bg-white/60 text-amber-700 hover:bg-white"}`}
           >
-            {activeTab === "RECEIVABLE" ? "▸ Currently Viewing" : "View Receivables →"}
+            {activeTab === "RECEIVABLE" ? "▸ Currently Viewing" : (userType === "super_admin" ? "View Receivables →" : "View Payables →")}
           </button>
         </div>
 
@@ -190,20 +198,28 @@ export const SettlementManager: React.FC<SettlementManagerProps> = ({ userType, 
         <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-3xl p-6 space-y-4">
           <div className="flex items-center gap-3">
             <div className="h-12 w-12 bg-blue-100 rounded-2xl flex items-center justify-center">
-              <ArrowUpRight className="h-6 w-6 text-blue-600" />
+              {userType === "super_admin" ? <ArrowUpRight className="h-6 w-6 text-blue-600" /> : <ArrowDownLeft className="h-6 w-6 text-blue-600" />}
             </div>
             <div>
-              <p className="text-xs font-black text-blue-700 uppercase tracking-widest">Payables</p>
-              <p className="text-[11px] text-blue-600 font-medium">Platform collected online → owes commission to partner</p>
+              <p className="text-xs font-black text-blue-700 uppercase tracking-widest">
+                {userType === "super_admin" ? "Payables" : "Receivables"}
+              </p>
+              <p className="text-[11px] text-blue-600 font-medium">
+                {userType === "super_admin" ? "Platform collected online → owes commission to partner" : "Platform collected online → owes commission to you"}
+              </p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-white/70 rounded-2xl p-4">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Pending Payout</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                {userType === "super_admin" ? "Pending Payout" : "Pending Collection"}
+              </p>
               <p className="text-2xl font-black text-blue-700">₹{pendingPay.toLocaleString("en-IN")}</p>
             </div>
             <div className="bg-white/70 rounded-2xl p-4">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Paid Out ✓</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                {userType === "super_admin" ? "Paid Out ✓" : "Received ✓"}
+              </p>
               <p className="text-2xl font-black text-emerald-700">₹{totalPaid.toLocaleString("en-IN")}</p>
             </div>
           </div>
@@ -211,7 +227,7 @@ export const SettlementManager: React.FC<SettlementManagerProps> = ({ userType, 
             onClick={() => setActiveTab("PAYABLE")}
             className={`w-full py-2.5 rounded-xl text-sm font-black transition-all ${activeTab === "PAYABLE" ? "bg-blue-600 text-white shadow-lg shadow-blue-200" : "bg-white/60 text-blue-700 hover:bg-white"}`}
           >
-            {activeTab === "PAYABLE" ? "▸ Currently Viewing" : "View Payables →"}
+            {activeTab === "PAYABLE" ? "▸ Currently Viewing" : (userType === "super_admin" ? "View Payables →" : "View Receivables →")}
           </button>
         </div>
       </div>
@@ -239,7 +255,9 @@ export const SettlementManager: React.FC<SettlementManagerProps> = ({ userType, 
         <div className="px-6 py-4 border-b border-slate-50 flex items-center gap-3">
           <div className={`h-2 w-2 rounded-full ${activeTab === "RECEIVABLE" ? "bg-amber-500" : "bg-blue-500"}`} />
           <h3 className="font-black text-slate-800 text-sm">
-            {activeTab === "RECEIVABLE" ? "Receivables — Commission to Collect from Partners" : "Payables — Commission to Pay Out to Partners"}
+            {activeTab === "RECEIVABLE" 
+              ? (userType === "super_admin" ? "Receivables — Commission to Collect from Partners" : "Payables — Commission to Pay to Platform") 
+              : (userType === "super_admin" ? "Payables — Commission to Pay Out to Partners" : "Receivables — Commission to Collect from Platform")}
           </h3>
           <span className="ml-auto text-xs font-black text-slate-400 bg-slate-100 px-3 py-1 rounded-full">{filtered.length} records</span>
         </div>
@@ -369,7 +387,9 @@ export const SettlementManager: React.FC<SettlementManagerProps> = ({ userType, 
               </div>
               <div className="flex items-center gap-3">
                 <span className={`px-3 py-1 rounded-lg border text-[10px] font-black uppercase ${selected.settlement_direction === "RECEIVABLE" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-blue-50 text-blue-700 border-blue-200"}`}>
-                  {selected.settlement_direction === "RECEIVABLE" ? "↓ Receivable" : "↑ Payable"}
+                  {selected.settlement_direction === "RECEIVABLE" 
+                    ? (userType === "super_admin" ? "↓ Receivable" : "↑ Payable") 
+                    : (userType === "super_admin" ? "↑ Payable" : "↓ Receivable")}
                 </span>
                 <span className={`px-3 py-1 rounded-lg border text-[10px] font-black uppercase ${STATUS_COLOR[selected.settlement_status]}`}>
                   {STATUS_LABEL[selected.settlement_status]}
