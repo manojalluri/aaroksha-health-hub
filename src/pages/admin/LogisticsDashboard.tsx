@@ -31,6 +31,9 @@ interface DeliveryOrder {
   type: 'prescription' | 'lab';
   collection_date?: string;
   collection_time?: string;
+  payment_status?: string;
+  total_amount?: number;
+  grand_total?: number;
 }
 
 const statusStyle: Record<string, string> = {
@@ -178,7 +181,9 @@ const LogisticsDashboard = () => {
         delivery_code: d.collection_code,
         type: 'lab',
         collection_date: d.collection_date,
-        collection_time: d.collection_time
+        collection_time: d.collection_time,
+        payment_status: d.payment_status,
+        total_amount: d.total_amount
       })) as DeliveryOrder[];
     },
     refetchInterval: 60000,
@@ -475,6 +480,7 @@ const LogisticsDashboard = () => {
                      <TableHead className="font-black text-[10px] uppercase tracking-widest text-slate-400">Location</TableHead>
                      <TableHead className="font-black text-[10px] uppercase tracking-widest text-slate-400">Status</TableHead>
                      <TableHead className="font-black text-[10px] uppercase tracking-widest text-slate-400">Time</TableHead>
+                     <TableHead className="font-black text-[10px] uppercase tracking-widest text-slate-400">Payment</TableHead>
                      <TableHead className="text-right">Actions</TableHead>
                    </TableRow>
                  </TableHeader>
@@ -504,6 +510,18 @@ const LogisticsDashboard = () => {
                            </div>
                          ) : (
                            new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                         )}
+                       </TableCell>
+                       <TableCell>
+                         {order.payment_status === "pending" ? (
+                           <div className="flex flex-col">
+                             <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Collect Cash</span>
+                             <span className="font-black text-slate-900 text-sm">₹{order.type === 'lab' ? order.total_amount : order.grand_total}</span>
+                           </div>
+                         ) : (
+                           <span className="inline-flex items-center gap-1.5 text-[9px] font-black uppercase text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">
+                             <CheckCircle className="h-3 w-3" /> Paid Online
+                           </span>
                          )}
                        </TableCell>
                        <TableCell className="text-right">
@@ -562,9 +580,21 @@ const LogisticsDashboard = () => {
                       <h4 className="font-black text-slate-800 text-base mt-1">{order.patient_name}</h4>
                       <p className="text-xs text-slate-400 font-bold mt-0.5">{order.patient_phone}</p>
                     </div>
-                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${statusStyle[order.status === "reviewed" && (order as any).payment_status === "paid" ? "paid" : order.status] || "bg-slate-100"}`}>
-                      {statusLabel[order.status === "reviewed" && (order as any).payment_status === "paid" ? "paid" : order.status] || order.status}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${statusStyle[order.status === "reviewed" && (order as any).payment_status === "paid" ? "paid" : order.status] || "bg-slate-100"}`}>
+                        {statusLabel[order.status === "reviewed" && (order as any).payment_status === "paid" ? "paid" : order.status] || order.status}
+                      </span>
+                      {order.payment_status === "pending" ? (
+                         <span className="px-2 py-1 bg-amber-50 text-amber-700 rounded-md border border-amber-200 text-[10px] font-black uppercase flex flex-col items-end leading-tight mt-1 w-full text-right">
+                           <span className="text-[8px] tracking-widest">Collect Cash</span>
+                           <span className="text-sm">₹{order.type === 'lab' ? order.total_amount : order.grand_total}</span>
+                         </span>
+                      ) : (
+                         <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-md border border-emerald-200 text-[10px] font-black uppercase mt-1">
+                           Paid Online
+                         </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex items-start gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
@@ -730,6 +760,12 @@ const LogisticsDashboard = () => {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {verifyingOrder?.payment_status === 'pending' && (
+              <div className="bg-amber-100 border border-amber-200 rounded-2xl p-4 mb-2">
+                <p className="text-xs font-black text-amber-800 uppercase tracking-widest mb-1">⚠️ Collect Cash Before Entering Code</p>
+                <p className="text-3xl font-black text-amber-900">₹{verifyingOrder.type === 'lab' ? verifyingOrder.total_amount : verifyingOrder.grand_total}</p>
+              </div>
+            )}
             {verifyingOrder?.type === 'lab' ? (
               <p className="text-sm text-slate-500 font-medium">
                 Ask the <span className="font-black text-slate-700">patient</span> for the 6-character code shown on their booking confirmation. This verifies you have collected the sample from the correct patient.
