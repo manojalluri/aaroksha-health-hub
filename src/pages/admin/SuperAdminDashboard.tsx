@@ -1571,7 +1571,10 @@ const SuperAdminDashboard = () => {
                         <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1.5">Select Lab Partner *</label>
                         <select
                           value={mbLabPartnerId}
-                          onChange={e => setMbLabPartnerId(e.target.value)}
+                          onChange={e => {
+                            setMbLabPartnerId(e.target.value);
+                            setMbLabSelectedTests([]);
+                          }}
                           className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm text-slate-700 outline-none focus:border-violet-300 focus:ring-2 focus:ring-violet-100 transition-all font-semibold"
                         >
                           <option value="">-- Select Lab Partner --</option>
@@ -1647,7 +1650,7 @@ const SuperAdminDashboard = () => {
                         >
                           <option value="">-- Add Lab Test --</option>
                           {labTestsList
-                            .filter(t => !mbLabSelectedTests.some(x => x.id === t.id))
+                            .filter(t => t.partner_id === mbLabPartnerId && !mbLabSelectedTests.some(x => x.id === t.id))
                             .map(t => (
                               <option key={t.id} value={t.id}>
                                 {t.name} · Price: ₹{t.price}
