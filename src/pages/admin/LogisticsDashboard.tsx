@@ -29,6 +29,8 @@ interface DeliveryOrder {
   delivery_fee?: number;
   delivery_code?: string;
   type: 'prescription' | 'lab';
+  collection_date?: string;
+  collection_time?: string;
 }
 
 const statusStyle: Record<string, string> = {
@@ -174,7 +176,9 @@ const LogisticsDashboard = () => {
         status: d.status,
         delivery_fee: 49,
         delivery_code: d.collection_code,
-        type: 'lab'
+        type: 'lab',
+        collection_date: d.collection_date,
+        collection_time: d.collection_time
       })) as DeliveryOrder[];
     },
     refetchInterval: 60000,
@@ -493,7 +497,14 @@ const LogisticsDashboard = () => {
                           </span>
                         </TableCell>
                        <TableCell className="text-xs text-slate-400 font-medium">
-                         {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                         {order.type === 'lab' && order.collection_date && order.collection_time ? (
+                           <div className="flex flex-col">
+                             <span className="font-bold text-violet-600">Collect:</span>
+                             <span>{new Date(order.collection_date).toLocaleDateString("en-IN", { day: 'numeric', month: 'short' })} at {order.collection_time}</span>
+                           </div>
+                         ) : (
+                           new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                         )}
                        </TableCell>
                        <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
@@ -562,7 +573,13 @@ const LogisticsDashboard = () => {
                   </div>
 
                   <div className="flex items-center justify-between pt-2">
-                    <p className="text-[10px] font-bold text-slate-400 italic">Assign time: {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                    {order.type === 'lab' && order.collection_date && order.collection_time ? (
+                      <p className="text-[10px] font-bold text-violet-600 italic">
+                        Collect: {new Date(order.collection_date).toLocaleDateString("en-IN", { day: 'numeric', month: 'short' })} at {order.collection_time}
+                      </p>
+                    ) : (
+                      <p className="text-[10px] font-bold text-slate-400 italic">Assign time: {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                    )}
                     <div className="flex gap-2">
                       <a 
                         href={`tel:${order.patient_phone}`}
@@ -640,6 +657,19 @@ const LogisticsDashboard = () => {
               </div>
 
               <div className="space-y-4">
+                {selectedOrder.type === 'lab' && selectedOrder.collection_date && selectedOrder.collection_time && (
+                  <div className="flex gap-4">
+                    <div className="h-10 w-10 rounded-xl bg-violet-100 flex items-center justify-center shrink-0">
+                      <Clock className="h-5 w-5 text-violet-500" />
+                    </div>
+                    <div>
+                      <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Collection Slot</Label>
+                      <p className="text-sm font-bold text-violet-700 leading-relaxed">
+                        {new Date(selectedOrder.collection_date).toLocaleDateString("en-IN", { day: 'numeric', month: 'short', year: 'numeric' })} at {selectedOrder.collection_time}
+                      </p>
+                    </div>
+                  </div>
+                )}
                 <div className="flex gap-4">
                   <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
                     <Map className="h-5 w-5 text-slate-500" />

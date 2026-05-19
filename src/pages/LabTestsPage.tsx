@@ -151,7 +151,7 @@ const LabTestsPage = () => {
     },
   });
 
-  const { data: combos = STATIC_COMBOS } = useQuery<LabCombo[]>({
+  const { data: combos = [], isLoading: loadingCombos } = useQuery<LabCombo[]>({
     queryKey: ["lab-combos"],
     queryFn: async () => {
       // 1. Get active partners
@@ -162,7 +162,7 @@ const LabTestsPage = () => {
         .eq("status", "active");
       
       const activeIds = (activeLabs || []).map(p => p.partner_id);
-      if (activeIds.length === 0) return STATIC_COMBOS;
+      if (activeIds.length === 0) return [];
 
       // 2. Fetch combos for active partners
       const { data, error } = await supabase
@@ -171,40 +171,34 @@ const LabTestsPage = () => {
         .in("partner_id", activeIds)
         .eq("status", "active");
 
-      if (error || !data?.length) return STATIC_COMBOS;
-      return data as LabCombo[];
+      if (error) {
+        console.error("Error fetching lab combos:", error);
+        return [];
+      }
+      return (data || []) as LabCombo[];
     },
   });
 
-  // Add all tests of a combo to cart
+  // Add combo directly to cart
   const addComboToCart = (combo: LabCombo) => {
-    // Map combo test names → actual LabTest objects
-    const comboTests: LabTest[] = combo.tests.map((testName, i) => {
-      const found = labTests.find(t =>
-        t.name.toLowerCase().includes(testName.toLowerCase()) ||
-        testName.toLowerCase().includes(t.name.toLowerCase())
-      );
-      return found ?? {
-        id: `${combo.id}_${i}`,
-        name: testName,
-        category: "Package",
-        price: 0,
-        description: "",
-        turnaround: "24 hours",
-      };
-    });
+    // Treat the combo as a single LabTest item
+    const comboTest: LabTest = {
+      id: combo.id || `combo_${Date.now()}`,
+      name: combo.name,
+      category: "Package",
+      price: combo.combo_price,
+      original_price: combo.original_price,
+      description: combo.description || `Includes: ${combo.tests.join(", ")}`,
+      turnaround: "24 hours",
+    };
 
-    let added = 0;
-    const newCart = [...cart];
-    for (const test of comboTests) {
-      if (!newCart.find(c => c.test.id === test.id)) {
-        newCart.push({ test, quantity: 1 });
-        added++;
-      }
+    if (cart.find(c => c.test.id === comboTest.id)) {
+      toast.info("This combo is already in your cart");
+      return;
     }
-    setCart(newCart);
-    if (added > 0) toast.success(`${combo.name} — ${added} tests added to cart!`);
-    else toast.info("All tests from this combo are already in your cart");
+
+    setCart([...cart, { test: comboTest, quantity: 1 }]);
+    toast.success(`${combo.name} added to cart!`);
   };
 
   const { data: labPartner } = useQuery({

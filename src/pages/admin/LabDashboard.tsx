@@ -608,7 +608,9 @@ const LabDashboard = () => {
       };
 
       if (!id) {
-        const { error } = await supabase.from("lab_combos").insert(finalData);
+        // Generate an ID to avoid relying on DB defaults if they are missing
+        const newId = `combo_${Date.now()}`;
+        const { error } = await supabase.from("lab_combos").insert({ id: newId, ...finalData });
         if (error) throw error;
       } else {
         const { error } = await supabase.from("lab_combos").update(finalData).eq("id", id);
