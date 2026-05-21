@@ -57,6 +57,7 @@ const statusStyle: Record<string, string> = {
   pending:    "bg-amber-100 text-amber-700 border-amber-200",
   reviewed:   "bg-blue-100 text-blue-700 border-blue-200",
   paid:       "bg-violet-100 text-violet-700 border-violet-200",
+  confirmed:  "bg-violet-100 text-violet-700 border-violet-200",
   dispatched: "bg-orange-100 text-orange-700 border-orange-200",
   collected:  "bg-indigo-100 text-indigo-700 border-indigo-200",
   completed:  "bg-emerald-100 text-emerald-700 border-emerald-200",
@@ -66,7 +67,8 @@ const statusStyle: Record<string, string> = {
 const statusLabel: Record<string, string> = {
   pending:    "Review Pending",
   reviewed:   "Pricing Sent",
-  paid:       "Paid — Ready to Dispatch",
+  paid:       "Confirmed — Ready to Dispatch",
+  confirmed:  "Confirmed — Ready to Dispatch",
   dispatched: "Dispatched",
   collected:  "Out for Delivery",
   completed:  "Delivered",
@@ -184,11 +186,11 @@ const PharmacyDashboard = () => {
     const matchSearch =
       (o.patient_name || "").toLowerCase().includes(search.toLowerCase()) ||
       (o.order_id || o.id).toLowerCase().includes(search.toLowerCase());
-    // 'paid' filter: show orders with payment_status=paid OR status=paid
-    const isPaidReady = o.payment_status === "paid" || o.status === "paid";
+    // 'confirmed' filter: show orders with payment_status=paid OR status=paid or confirmed
+    const isPaidReady = o.payment_status === "paid" || o.status === "paid" || o.status === "confirmed";
     const matchStatus = statusFilter === "all"
       ? true
-      : statusFilter === "paid"
+      : statusFilter === "confirmed"
       ? isPaidReady && o.status !== "dispatched" && o.status !== "collected" && o.status !== "completed"
       : o.status === statusFilter;
     return matchSearch && matchStatus;
@@ -226,7 +228,7 @@ const PharmacyDashboard = () => {
   const stats = [
     { label: "New Requests", value: orders.filter(o => o.status === "pending" && !o.partner_id).length, color: "text-amber-600", bg: "bg-amber-50", icon: FileText },
     { label: "Pricing Sent", value: orders.filter(o => o.partner_id === partner?.partner_id && o.status === "reviewed").length, color: "text-blue-600", bg: "bg-blue-50", icon: Clock },
-    { label: "Paid — Dispatch Now", value: orders.filter(o => o.partner_id === partner?.partner_id && (o.status === "paid" || (o.status === "reviewed" && o.payment_status === "paid"))).length, color: "text-violet-600", bg: "bg-violet-50", icon: Truck },
+    { label: "Confirmed — Dispatch Now", value: orders.filter(o => o.partner_id === partner?.partner_id && (o.status === "paid" || o.status === "confirmed" || (o.status === "reviewed" && o.payment_status === "paid"))).length, color: "text-violet-600", bg: "bg-violet-50", icon: Truck },
     { label: "Dispatched", value: orders.filter(o => o.partner_id === partner?.partner_id && ["dispatched","collected"].includes(o.status)).length, color: "text-orange-600", bg: "bg-orange-50", icon: Package },
     { label: "Delivered", value: orders.filter(o => (o.partner_id === partner?.partner_id || (!o.partner_id && o.status === 'completed')) && o.status === "completed").length, color: "text-emerald-600", bg: "bg-emerald-50", icon: CheckCircle },
   ];
@@ -390,7 +392,7 @@ const PharmacyDashboard = () => {
                     <Input placeholder="Search orders..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 w-56" />
                   </div>
                   <div className="flex gap-2 flex-wrap">
-                    {["all", "pending", "reviewed", "paid", "dispatched", "collected", "completed", "rejected"].map(s => (
+                    {["all", "pending", "reviewed", "confirmed", "dispatched", "collected", "completed", "rejected"].map(s => (
                       <button key={s} onClick={() => setStatusFilter(s)}
                         className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all capitalize border ${statusFilter === s ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-500 border-slate-200 hover:border-emerald-300"}`}>
                         {s === "all" ? "All" : statusLabel[s] || s}
@@ -457,8 +459,8 @@ const PharmacyDashboard = () => {
                                 </span>
                               )}
 
-                              {/* Paid (via reviewed+paid or status=paid): Show dispatch button */}
-                              {(order.status === "paid" || (order.status === "reviewed" && order.payment_status === "paid")) && (
+                              {/* Confirmed (via reviewed+paid or status=paid/confirmed): Show dispatch button */}
+                              {(order.status === "paid" || order.status === "confirmed" || (order.status === "reviewed" && order.payment_status === "paid")) && (
                                 <Button size="sm" className="bg-violet-600 hover:bg-violet-700 text-white h-8 text-xs" onClick={() => openReview(order)}>
                                   <Truck className="h-3 w-3 mr-1" /> Dispatch
                                 </Button>
@@ -471,11 +473,11 @@ const PharmacyDashboard = () => {
                                 </span>
                               )}
 
-                              {/* Collected: allow marking delivered */}
+                              {/* Collected: delivery partner will mark as delivered via code */}
                               {order.status === "collected" && (
-                                <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs" onClick={() => handleMarkDelivered(order.id)}>
-                                  <Package className="h-3 w-3 mr-1" /> Delivered
-                                </Button>
+                                <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 border border-indigo-200 rounded">
+                                  Out For Delivery
+                                </span>
                               )}
                             </div>
                           </TableCell>
@@ -705,20 +707,20 @@ const PharmacyDashboard = () => {
                   <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
                     <Clock className="h-5 w-5 text-amber-600 shrink-0" />
                     <div>
-                      <p className="text-sm font-black text-amber-800">Waiting for Customer Payment</p>
-                      <p className="text-xs text-amber-600">Total ₹{selectedOrder.grand_total} sent. Order will unlock for dispatch after payment.</p>
+                      <p className="text-sm font-black text-amber-800">Waiting for Customer Confirmation</p>
+                      <p className="text-xs text-amber-600">Total ₹{selectedOrder.grand_total} sent. Order will unlock for dispatch after confirmation.</p>
                     </div>
                   </div>
                 )}
 
-                {/* Step 3: PAID — Show dispatch + delivery partner assignment */}
-                {(selectedOrder.status === "paid" || (selectedOrder.status === "reviewed" && selectedOrder.payment_status === "paid")) && (
+                {/* Step 3: CONFIRMED — Show dispatch + delivery partner assignment */}
+                {(selectedOrder.status === "paid" || selectedOrder.status === "confirmed" || (selectedOrder.status === "reviewed" && selectedOrder.payment_status === "paid")) && (
                   <div className="space-y-3">
                     <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200">
                       <CheckCircle className="h-5 w-5 text-emerald-600 shrink-0" />
                       <div>
-                        <p className="text-sm font-black text-emerald-800">✅ Payment Received — Ready to Dispatch</p>
-                        <p className="text-xs text-emerald-600">Amount: ₹{selectedOrder.grand_total} · Assign a delivery partner below</p>
+                        <p className="text-sm font-black text-emerald-800">✅ Order Confirmed — Ready to Dispatch</p>
+                        <p className="text-xs text-emerald-600">Amount: ₹{selectedOrder.grand_total} (COD) · Assign a delivery partner below</p>
                       </div>
                     </div>
 
@@ -771,9 +773,6 @@ const PharmacyDashboard = () => {
                         </p>
                       </div>
                     </div>
-                    <Button className="w-full bg-emerald-600 hover:bg-emerald-700 font-bold" onClick={() => handleMarkDelivered(selectedOrder.id)} disabled={updateMutation.isPending}>
-                      <Package className="h-4 w-4 mr-2" /> Mark as Delivered
-                    </Button>
                   </div>
                 )}
 

@@ -831,6 +831,7 @@ const PrescriptionCard = ({
   const needsPay = rx.status === "reviewed" && rx.grand_total && rx.grand_total > 0;
   const isDispatched = rx.status === "dispatched";
   const isCompleted = rx.status === "completed";
+  const isPaid = rx.payment_status === "paid" || isConfirmed;
 
   return (
     <div className={`bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden transition-all duration-300 ${isExpanded ? 'ring-2 ring-blue-100 ring-offset-2' : ''}`}>
@@ -987,7 +988,7 @@ const PrescriptionCard = ({
             {paying ? (
               <><span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Processing…</>
             ) : (
-              <><CheckCircle2 className="h-4 w-4" /> Confirm Order (COD)</>
+              <><CheckCircle className="h-4 w-4" /> Confirm Order (COD)</>
             )}
           </button>
         </div>
@@ -1023,12 +1024,12 @@ const PrescriptionCard = ({
         </div>
       )}
 
-      {/* Paid but not dispatched yet */}
-      {isPaid && rx.status === "reviewed" && (
+      {/* Paid or Confirmed but not dispatched yet */}
+      {(rx.status === "confirmed" || (isPaid && rx.status === "reviewed")) && (
         <div className="mx-4 mb-4 bg-emerald-50 border border-emerald-200 rounded-2xl p-3 flex items-center gap-2">
           <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0" />
           <p className="text-xs font-bold text-emerald-700">
-            Payment confirmed! Your order is being prepared for dispatch.
+            Order confirmed! Your order is being prepared for dispatch.
           </p>
         </div>
       )}

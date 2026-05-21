@@ -884,8 +884,7 @@ const PrescriptionPage = () => {
                       platform_fee: PLATFORM_FEE,
                       delivery_fee: deliveryFee,
                       grand_total: grandTotal,
-                      status: "paid",
-                      payment_status: "paid",
+                      status: "confirmed",
                       delivery_code: code,
                     })
                     .eq("id", prescriptionId);
@@ -901,7 +900,7 @@ const PrescriptionPage = () => {
                   setStep("confirmed");
                 } catch (err) {
                   console.error(err);
-                  toast.error("Order failed: " + (err instanceof Error ? err.message : "Unknown error"));
+                  toast.error("Order failed: " + (err?.message || err?.details || JSON.stringify(err) || "Unknown error"));
                 } finally {
                   setIsUploading(false);
                 }
