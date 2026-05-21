@@ -34,6 +34,7 @@ interface DeliveryOrder {
   payment_status?: string;
   total_amount?: number;
   grand_total?: number;
+  tests?: any[];
 }
 
 const statusStyle: Record<string, string> = {
@@ -97,11 +98,14 @@ const LogisticsDashboard = () => {
 
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("prescriptions");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("all");
   const [selectedOrder, setSelectedOrder] = useState<DeliveryOrder | null>(null);
   
   // OTP Verification state
   const [verifyingOrder, setVerifyingOrder] = useState<DeliveryOrder | null>(null);
   const [otpInput, setOtpInput] = useState("");
+  const [collectedAmountInput, setCollectedAmountInput] = useState("");
   const [historyFilter, setHistoryFilter] = useState("all");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -183,7 +187,8 @@ const LogisticsDashboard = () => {
         collection_date: d.collection_date,
         collection_time: d.collection_time,
         payment_status: d.payment_status,
-        total_amount: d.total_amount
+        total_amount: d.total_amount,
+        tests: d.tests
       })) as DeliveryOrder[];
     },
     refetchInterval: 60000,
@@ -233,6 +238,14 @@ const LogisticsDashboard = () => {
 
   const handleVerifyOtp = () => {
     if (!verifyingOrder) return;
+
+    if (verifyingOrder.payment_status === 'pending') {
+      const expectedAmount = verifyingOrder.type === 'lab' ? verifyingOrder.total_amount : verifyingOrder.grand_total;
+      if (parseFloat(collectedAmountInput) !== expectedAmount) {
+         toast.error(`Please enter the correct collected amount (₹${expectedAmount})`);
+         return;
+      }
+    }
     
     // Check if OTP matches
     const correctCode = verifyingOrder.delivery_code;
@@ -244,6 +257,7 @@ const LogisticsDashboard = () => {
       updateMutation.mutate({ id: verifyingOrder.id, status: verifyingOrder.type === 'lab' ? 'collected' : 'completed', type: verifyingOrder.type });
       setVerifyingOrder(null);
       setOtpInput("");
+      setCollectedAmountInput("");
       return;
     }
 
@@ -251,6 +265,7 @@ const LogisticsDashboard = () => {
       updateMutation.mutate({ id: verifyingOrder.id, status: verifyingOrder.type === 'lab' ? 'collected' : 'completed', type: verifyingOrder.type });
       setVerifyingOrder(null);
       setOtpInput("");
+      setCollectedAmountInput("");
     } else {
       toast.error("Invalid verification code. Please check with the patient.");
     }
@@ -262,15 +277,34 @@ const LogisticsDashboard = () => {
     navigate("/admin/login/logistics");
   };
 
-  const filteredRx = (Array.isArray(prescriptions) ? prescriptions : []).filter(o => 
-    (o.patient_name || "").toLowerCase().includes(search.toLowerCase()) ||
-    (o.order_id || o.id).toLowerCase().includes(search.toLowerCase())
-  );
+  const applyFilters = (list: DeliveryOrder[]) => {
+    return list.filter(o => {
+      const matchSearch = (o.patient_name || "").toLowerCase().includes(search.toLowerCase()) ||
+                          (o.order_id || o.id).toLowerCase().includes(search.toLowerCase());
+      
+      const isDelivered = o.status === "completed" || o.status === "collected";
+      const matchStatus = statusFilter === "all" ? true :
+                          statusFilter === "pending" ? !isDelivered :
+                          statusFilter === "delivered" ? isDelivered : true;
+                          
+      const date = new Date(o.created_at);
+      const now = new Date();
+      let matchDate = true;
+      if (dateFilter === "today") {
+        matchDate = date.toDateString() === now.toDateString();
+      } else if (dateFilter === "yesterday") {
+        const y = new Date(); y.setDate(now.getDate() - 1);
+        matchDate = date.toDateString() === y.toDateString();
+      } else if (dateFilter === "month") {
+        matchDate = date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+      }
+      
+      return matchSearch && matchStatus && matchDate;
+    });
+  };
 
-  const filteredLab = (Array.isArray(labBookings) ? labBookings : []).filter(o => 
-    (o.patient_name || "").toLowerCase().includes(search.toLowerCase()) ||
-    (o.order_id || o.id).toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredRx = applyFilters(Array.isArray(prescriptions) ? prescriptions : []);
+  const filteredLab = applyFilters(Array.isArray(labBookings) ? labBookings : []);
 
   if (isVerifying) {
     return (
@@ -351,14 +385,37 @@ const LogisticsDashboard = () => {
             </h2>
             <p className="text-slate-400 text-xs md:text-sm font-medium">Manage your assignments and track efficiency.</p>
           </div>
-          <div className="flex items-center gap-3 w-full sm:w-auto">
-             <div className="relative flex-1 sm:w-64">
+          <div className="flex flex-col md:flex-row items-center gap-3 w-full sm:w-auto">
+            {activeTab !== 'stats' && (
+              <div className="flex gap-2 w-full sm:w-auto">
+                <select 
+                  className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-sky-300 transition-all font-bold cursor-pointer"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                >
+                  <option value="all">All Status</option>
+                  <option value="pending">Pending Tasks</option>
+                  <option value="delivered">Delivered / Collected</option>
+                </select>
+                <select 
+                  className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-sky-300 transition-all font-bold cursor-pointer"
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                >
+                  <option value="all">All Time</option>
+                  <option value="today">Today</option>
+                  <option value="yesterday">Yesterday</option>
+                  <option value="month">This Month</option>
+                </select>
+              </div>
+            )}
+             <div className="relative w-full md:w-64 shrink-0">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input 
                   placeholder="Search orders..." 
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  className="pl-9 h-11 rounded-xl border-slate-200 bg-white" 
+                  className="pl-9 h-11 rounded-xl border-slate-200 bg-white shadow-sm" 
                 />
              </div>
           </div>
@@ -480,7 +537,7 @@ const LogisticsDashboard = () => {
                      <TableHead className="font-black text-[10px] uppercase tracking-widest text-slate-400">Location</TableHead>
                      <TableHead className="font-black text-[10px] uppercase tracking-widest text-slate-400">Status</TableHead>
                      <TableHead className="font-black text-[10px] uppercase tracking-widest text-slate-400">Time</TableHead>
-                     <TableHead className="font-black text-[10px] uppercase tracking-widest text-slate-400">Payment</TableHead>
+
                      <TableHead className="text-right">Actions</TableHead>
                    </TableRow>
                  </TableHeader>
@@ -512,18 +569,7 @@ const LogisticsDashboard = () => {
                            new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                          )}
                        </TableCell>
-                       <TableCell>
-                         {order.payment_status === "pending" ? (
-                           <div className="flex flex-col">
-                             <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Collect Cash</span>
-                             <span className="font-black text-slate-900 text-sm">₹{order.type === 'lab' ? order.total_amount : order.grand_total}</span>
-                           </div>
-                         ) : (
-                           <span className="inline-flex items-center gap-1.5 text-[9px] font-black uppercase text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">
-                             <CheckCircle className="h-3 w-3" /> Paid Online
-                           </span>
-                         )}
-                       </TableCell>
+
                        <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
                             {order.status !== 'completed' && order.status !== 'cancelled' && (
@@ -543,6 +589,7 @@ const LogisticsDashboard = () => {
                                     onClick={() => {
                                       setVerifyingOrder(order);
                                       setOtpInput("");
+                                      setCollectedAmountInput("");
                                     }}
                                     className="h-8 px-3 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 text-xs font-bold transition-all"
                                   >
@@ -584,16 +631,7 @@ const LogisticsDashboard = () => {
                       <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${statusStyle[order.status === "reviewed" && (order as any).payment_status === "paid" ? "paid" : order.status] || "bg-slate-100"}`}>
                         {statusLabel[order.status === "reviewed" && (order as any).payment_status === "paid" ? "paid" : order.status] || order.status}
                       </span>
-                      {order.payment_status === "pending" ? (
-                         <span className="px-2 py-1 bg-amber-50 text-amber-700 rounded-md border border-amber-200 text-[10px] font-black uppercase flex flex-col items-end leading-tight mt-1 w-full text-right">
-                           <span className="text-[8px] tracking-widest">Collect Cash</span>
-                           <span className="text-sm">₹{order.type === 'lab' ? order.total_amount : order.grand_total}</span>
-                         </span>
-                      ) : (
-                         <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-md border border-emerald-200 text-[10px] font-black uppercase mt-1">
-                           Paid Online
-                         </span>
-                      )}
+
                     </div>
                   </div>
 
@@ -640,6 +678,7 @@ const LogisticsDashboard = () => {
                               onClick={() => {
                                 setVerifyingOrder(order);
                                 setOtpInput("");
+                                setCollectedAmountInput("");
                               }}
                               className="flex-1 h-10 px-4 rounded-xl bg-emerald-500 text-white font-black text-xs shadow-lg shadow-emerald-100 transition-all active:scale-95"
                             >
@@ -687,6 +726,19 @@ const LogisticsDashboard = () => {
               </div>
 
               <div className="space-y-4">
+                {selectedOrder.type === 'lab' && selectedOrder.tests && selectedOrder.tests.length > 0 && (
+                  <div className="bg-sky-50 border border-sky-100 rounded-2xl p-4">
+                    <p className="text-[10px] font-black text-sky-600 uppercase tracking-widest mb-3">Tests Booked</p>
+                    <div className="space-y-2">
+                      {selectedOrder.tests.map((t: any, i: number) => (
+                        <div key={i} className="flex justify-between items-center bg-white px-3 py-2 rounded-xl border border-sky-50 shadow-sm">
+                          <span className="text-sm font-bold text-slate-700">{t.name}</span>
+                          <span className="text-sm font-bold text-emerald-600">₹{t.price}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {selectedOrder.type === 'lab' && selectedOrder.collection_date && selectedOrder.collection_time && (
                   <div className="flex gap-4">
                     <div className="h-10 w-10 rounded-xl bg-violet-100 flex items-center justify-center shrink-0">
@@ -760,10 +812,30 @@ const LogisticsDashboard = () => {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {verifyingOrder?.type === 'lab' && verifyingOrder.tests && verifyingOrder.tests.length > 0 && (
+              <div className="bg-sky-50 border border-sky-100 rounded-2xl p-3 mb-3 text-left">
+                <p className="text-[10px] font-black text-sky-600 uppercase tracking-widest mb-2">Tests to Collect</p>
+                <div className="space-y-1">
+                  {verifyingOrder.tests.map((t: any, i: number) => (
+                    <div key={i} className="flex justify-between items-center bg-white px-3 py-2 rounded-xl border border-sky-50 shadow-sm">
+                      <span className="text-xs font-bold text-slate-700">{t.name}</span>
+                      <span className="text-xs font-bold text-sky-600">₹{t.price}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {verifyingOrder?.payment_status === 'pending' && (
               <div className="bg-amber-100 border border-amber-200 rounded-2xl p-4 mb-2">
                 <p className="text-xs font-black text-amber-800 uppercase tracking-widest mb-1">⚠️ Collect Cash Before Entering Code</p>
-                <p className="text-3xl font-black text-amber-900">₹{verifyingOrder.type === 'lab' ? verifyingOrder.total_amount : verifyingOrder.grand_total}</p>
+                <p className="text-3xl font-black text-amber-900 mb-3">₹{verifyingOrder.type === 'lab' ? verifyingOrder.total_amount : verifyingOrder.grand_total}</p>
+                <Input
+                  type="number"
+                  placeholder="Enter collected amount"
+                  value={collectedAmountInput}
+                  onChange={(e) => setCollectedAmountInput(e.target.value)}
+                  className="text-center font-bold text-lg h-12 border-amber-300 focus:border-amber-500 bg-white"
+                />
               </div>
             )}
             {verifyingOrder?.type === 'lab' ? (
